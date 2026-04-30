@@ -1,17 +1,35 @@
 # token-calc
 
-Local AI coding token usage and cost dashboard built with TanStack Start, Turbo, Tailwind CSS, and shadcn-style components.
+token-calc is a local dashboard for seeing how many tokens your AI coding tools are using and what that usage roughly costs.
 
-## Run
+It reads usage data already stored on your machine by tools like Claude Code, Codex, Gemini, OpenCode, Amp, and Pi-Agent. It then normalizes those records into one view with daily spend, source breakdowns, top models, token mix, and recent usage.
+
+Nothing needs to be uploaded anywhere. The web app and CLI both run locally.
+
+## How It Works
+
+1. token-calc scans the usual local data folders for supported AI coding tools.
+2. Each loader turns tool-specific records into a shared token event format.
+3. Missing costs are estimated from LiteLLM model pricing, with a small offline fallback.
+4. Events are aggregated by day, source, model, project, and token type.
+5. The result is shown in either the browser dashboard or the terminal UI.
+
+The numbers are meant for visibility and budgeting, not billing reconciliation. If a tool already records cost, token-calc uses that value. Otherwise it estimates cost from model pricing.
+
+## Web Dashboard
+
+Install dependencies and start the local web app:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-The app runs at `http://127.0.0.1:6767`.
+Open `http://127.0.0.1:6767`.
 
-## CLI
+The dashboard refreshes automatically and includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time.
+
+## Terminal UI
 
 The OpenTUI CLI runs with Bun:
 
@@ -19,13 +37,22 @@ The OpenTUI CLI runs with Bun:
 pnpm --filter @token-calc/cli dev -- --range 30
 ```
 
-Supported ranges are `7`, `30`, `90`, `180`, `365`, and `all`. Press `q` or `Ctrl+C` to exit.
+Supported ranges are `7`, `30`, `90`, `180`, `365`, and `all`.
 
-## What It Scans
+Press `q` or `Ctrl+C` to exit.
 
-token-calc reads local usage data for Claude Code, Codex, Gemini, OpenCode, Amp, and Pi-Agent, enriches model costs from LiteLLM pricing with an offline fallback, and renders the dashboard locally.
+## Supported Sources
 
-Supported override environment variables:
+token-calc currently scans:
+
+- Claude Code
+- Codex
+- Gemini
+- OpenCode
+- Amp
+- Pi-Agent
+
+You can point token-calc at custom data locations with these environment variables:
 
 - `CLAUDE_CONFIG_DIR`
 - `CODEX_HOME`
@@ -34,9 +61,13 @@ Supported override environment variables:
 - `AMP_DATA_DIR`
 - `PI_AGENT_DIR`
 
-## Scripts
+## Useful Commands
 
-- `pnpm dev` starts the web dev server on port `6767`.
-- `pnpm --filter @token-calc/cli dev -- --range 30` starts the OpenTUI CLI.
-- `pnpm build` builds the TanStack Start app.
-- `pnpm typecheck` runs TypeScript checks across workspaces.
+```bash
+pnpm dev
+pnpm build
+pnpm typecheck
+pnpm --filter @token-calc/cli dev -- --range all
+```
+
+`pnpm dev` starts the web dashboard. `pnpm build` and `pnpm typecheck` run across the workspace.
