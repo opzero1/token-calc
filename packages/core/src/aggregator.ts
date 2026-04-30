@@ -52,6 +52,10 @@ function normalizedProjectName(project?: string): string | null {
 	return trimmed;
 }
 
+function normalizedModelName(model: string): string {
+	return model.replace(/^gemini-claude-/, 'claude-');
+}
+
 export function aggregateDaily(events: UnifiedTokenEvent[]): DailyAggregation[] {
 	const map = new Map<string, DailyAggregation>();
 
@@ -117,12 +121,13 @@ export function aggregateDailyByModel(events: UnifiedTokenEvent[]): DailyModelAg
 
 	for (const e of events) {
 		const date = dateKey(e.timestamp);
-		const key = `${date}:${e.model}`;
+		const model = normalizedModelName(e.model);
+		const key = `${date}:${model}`;
 		let agg = map.get(key);
 		if (!agg) {
 			agg = {
 				date,
-				model: e.model,
+				model,
 				tokens: emptyTokens(),
 				costUSD: 0,
 				sources: [],
@@ -277,16 +282,17 @@ export function aggregateByModel(events: UnifiedTokenEvent[]): ModelAggregation[
 	const map = new Map<string, ModelAggregation>();
 
 	for (const e of events) {
-		let agg = map.get(e.model);
+		const model = normalizedModelName(e.model);
+		let agg = map.get(model);
 		if (!agg) {
 			agg = {
-				model: e.model,
+				model,
 				tokens: emptyTokens(),
 				costUSD: 0,
 				sources: [],
 				eventCount: 0,
 			};
-			map.set(e.model, agg);
+			map.set(model, agg);
 		}
 		agg.tokens = addTokens(agg.tokens, e.tokens);
 		agg.costUSD += e.costUSD;

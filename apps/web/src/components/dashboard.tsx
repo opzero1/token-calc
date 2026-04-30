@@ -62,6 +62,16 @@ function totalTokens(tokens: DashboardSnapshot['totals']['tokens']) {
   return tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead + tokens.reasoning
 }
 
+function tokenBreakdown(tokens: DashboardSnapshot['totals']['tokens']) {
+  return [
+    { key: 'input', label: 'In', value: tokens.input, className: 'bg-accent' },
+    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-main' },
+    { key: 'cacheCreation', label: 'Cache write', value: tokens.cacheCreation, className: 'bg-[#ffdc58]' },
+    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-muted' },
+    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#ff8ec3]' },
+  ].filter((item) => item.value > 0)
+}
+
 function shortModel(model: string) {
   return model.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/^\[pi\]\s*/, '')
 }
@@ -427,28 +437,78 @@ function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
 }
 
 function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
+  const [activeTab, setActiveTab] = React.useState<'cost' | 'tokens'>('cost')
   const models = snapshot.byModel.slice(0, 8)
+  const tokenModels = [...snapshot.byModel].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens)).slice(0, 8)
   const maxCost = maxOf(models.map((model) => model.costUSD))
+  const maxTokens = maxOf(tokenModels.map((model) => totalTokens(model.tokens)))
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <CardTitle>Top Models</CardTitle>
+        <TabsList className="shadow-[3px_3px_0_0_var(--border)]">
+          <TabsTrigger active={activeTab === 'cost'} onClick={() => setActiveTab('cost')}>
+            Cost
+          </TabsTrigger>
+          <TabsTrigger active={activeTab === 'tokens'} onClick={() => setActiveTab('tokens')}>
+            Tokens
+          </TabsTrigger>
+        </TabsList>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {models.map((model, index) => (
-          <div key={model.model} className="grid gap-1">
-            <div className="flex items-center justify-between gap-3 text-sm font-black">
-              <span className="truncate">
-                {index + 1}. {shortModel(model.model)}
-              </span>
-              <span>{formatUsd(model.costUSD)}</span>
+        {activeTab === 'cost'
+          ? models.map((model, index) => (
+            <div key={model.model} className="grid gap-1">
+              <div className="flex items-center justify-between gap-3 text-sm font-black">
+                <span className="truncate">
+                  {index + 1}. {shortModel(model.model)}
+                </span>
+                <span>{formatUsd(model.costUSD)}</span>
+              </div>
+              <div className="h-5 border-2 border-border bg-background">
+                <div className="h-full border-r-2 border-border bg-accent" style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }} />
+              </div>
             </div>
-            <div className="h-5 border-2 border-border bg-background">
-              <div className="h-full border-r-2 border-border bg-accent" style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }} />
-            </div>
-          </div>
-        ))}
+          ))
+          : tokenModels.map((model, index) => {
+            const total = totalTokens(model.tokens)
+            const breakdown = tokenBreakdown(model.tokens)
+
+            return (
+              <div key={model.model} className="grid gap-1.5">
+                <div className="flex items-center justify-between gap-3 text-sm font-black">
+                  <span className="truncate">
+                    {index + 1}. {shortModel(model.model)}
+                  </span>
+                  <span>{formatNumber(total)}</span>
+                </div>
+                <div className="h-5 border-2 border-border bg-background" title={`${formatNumber(total)} total tokens`}>
+                  <div className="h-full border-r-2 border-border bg-accent" style={{ width: `${Math.max(2, (total / maxTokens) * 100)}%` }} />
+                </div>
+                <div className="flex items-center justify-between gap-3 text-[11px] font-black uppercase">
+                  <span>{formatUsd(model.costUSD)}</span>
+                  <span>{formatNumber(model.eventCount)} events</span>
+                </div>
+                <div className="flex h-3 overflow-hidden border-2 border-border bg-background" title={breakdown.map((item) => `${item.label}: ${formatNumber(item.value)}`).join(', ')}>
+                  {breakdown.map((item) => (
+                    <div
+                      key={item.key}
+                      className={cn('h-full border-r-2 border-border last:border-r-0', item.className)}
+                      style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold">
+                  {breakdown.map((item) => (
+                    <span key={item.key} className="whitespace-nowrap">
+                      {item.label}: {formatNumber(item.value)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
       </CardContent>
     </Card>
   )
