@@ -12,6 +12,9 @@
     "@token-calc/core#build": {
       "outputs": []
     },
+    "@token-calc/cli#build": {
+      "outputs": []
+    },
     "typecheck": {
       "dependsOn": ["^typecheck"],
       "outputs": []
