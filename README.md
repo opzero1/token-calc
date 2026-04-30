@@ -5,8 +5,8 @@ Local AI coding token usage and cost dashboard built with TanStack Start, Turbo,
 ## Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 The app runs at `http://127.0.0.1:6767`.
@@ -16,7 +16,7 @@ The app runs at `http://127.0.0.1:6767`.
 The OpenTUI CLI runs with Bun:
 
 ```bash
-npm --workspace @token-calc/cli run dev -- --range 30
+pnpm --filter @token-calc/cli dev -- --range 30
 ```
 
 Supported ranges are `7`, `30`, `90`, `180`, `365`, and `all`. Press `q` or `Ctrl+C` to exit.
@@ -36,7 +36,7 @@ Supported override environment variables:
 
 ## Scripts
 
-- `npm run dev` starts the Turbo dev task on port `6767`.
-- `npm --workspace @token-calc/cli run dev -- --range 30` starts the OpenTUI CLI.
-- `npm run build` builds the TanStack Start app.
-- `npm run typecheck` runs TypeScript checks across workspaces.
+- `pnpm dev` starts the web dev server on port `6767`.
+- `pnpm --filter @token-calc/cli dev -- --range 30` starts the OpenTUI CLI.
+- `pnpm build` builds the TanStack Start app.
+- `pnpm typecheck` runs TypeScript checks across workspaces.

@@ -2,17 +2,13 @@
   "name": "token-calc",
   "private": true,
   "type": "module",
-  "packageManager": "npm@10.9.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "pnpm --filter @token-calc/web dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo typecheck",
-    "start": "npm --workspace @token-calc/web run dev"
+    "start": "pnpm --filter @token-calc/web dev"
   },
   "devDependencies": {
     "turbo": "^2.5.6",

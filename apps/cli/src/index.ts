@@ -139,7 +139,7 @@ function helpText() {
     'token-calc-tui',
     '',
     'Usage:',
-    '  npm --workspace @token-calc/cli run dev -- --range 30',
+    '  pnpm --filter @token-calc/cli dev -- --range 30',
     '  bun apps/cli/src/index.ts --range all',
     '',
     'Ranges: 7, 30, 90, 180, 365, all',
