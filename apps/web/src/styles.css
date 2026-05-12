@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fef2c8;
-  --secondary-background: #fffdf4;
+  --background: #f4f4f4;
+  --secondary-background: #ffffff;
   --foreground: #111111;
-  --main: #ff6b35;
-  --main-foreground: #111111;
-  --accent: #00c2ff;
+  --main: #111111;
+  --main-foreground: #ffffff;
+  --accent: #d9d9d9;
   --accent-foreground: #111111;
-  --muted: #d7d4ff;
-  --muted-foreground: #3f3a36;
-  --destructive: #ff3864;
+  --muted: #e8e8e8;
+  --muted-foreground: #525252;
+  --destructive: #3a3a3a;
   --border: #111111;
   --ring: #111111;
   --shadow: 5px 5px 0 0 var(--border);
@@ -69,17 +69,17 @@ select {
 }
 
 .metric-card:nth-child(2n) {
-  background: #c8facc;
+  background: #eeeeee;
 }
 
 .metric-card:nth-child(3n) {
-  background: #d7d4ff;
+  background: #dedede;
 }
 
 .metric-card:nth-child(4n) {
-  background: #ffdc58;
+  background: #f8f8f8;
 }
 
 .metric-card:nth-child(5n) {
-  background: #ffb3c7;
+  background: #cfcfcf;
 }

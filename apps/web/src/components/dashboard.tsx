@@ -28,12 +28,21 @@ const SOURCE_LABELS: Record<Source, string> = {
 }
 
 const SOURCE_COLORS: Record<Source, string> = {
-  'claude-code': '#ff6b35',
-  codex: '#00c2ff',
-  gemini: '#5ee35b',
-  opencode: '#d7d4ff',
-  amp: '#ffdc58',
-  pi: '#ff8ec3',
+  'claude-code': '#111111',
+  codex: '#3a3a3a',
+  gemini: '#626262',
+  opencode: '#8a8a8a',
+  amp: '#b5b5b5',
+  pi: '#dedede',
+}
+
+const SOURCE_FOREGROUND_COLORS: Record<Source, string> = {
+  'claude-code': '#ffffff',
+  codex: '#ffffff',
+  gemini: '#ffffff',
+  opencode: '#111111',
+  amp: '#111111',
+  pi: '#111111',
 }
 
 const RANGES: Array<{ value: TimeRange; label: string }> = [
@@ -64,11 +73,11 @@ function totalTokens(tokens: DashboardSnapshot['totals']['tokens']) {
 
 function tokenBreakdown(tokens: DashboardSnapshot['totals']['tokens']) {
   return [
-    { key: 'input', label: 'In', value: tokens.input, className: 'bg-accent' },
-    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-main' },
-    { key: 'cacheCreation', label: 'Cache write', value: tokens.cacheCreation, className: 'bg-[#ffdc58]' },
-    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-muted' },
-    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#ff8ec3]' },
+    { key: 'input', label: 'In', value: tokens.input, className: 'bg-[#111111]' },
+    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-[#404040]' },
+    { key: 'cacheCreation', label: 'Cache write', value: tokens.cacheCreation, className: 'bg-[#737373]' },
+    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-[#a3a3a3]' },
+    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#d4d4d4]' },
   ].filter((item) => item.value > 0)
 }
 
@@ -198,10 +207,10 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <header className="border-2 border-border bg-main p-4 shadow-shadow sm:p-5">
+      <header className="border-2 border-border bg-main p-4 text-main-foreground shadow-shadow sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
-            <div className="flex size-12 shrink-0 items-center justify-center border-2 border-border bg-accent shadow-[3px_3px_0_0_var(--border)]">
+            <div className="flex size-12 shrink-0 items-center justify-center border-2 border-border bg-accent text-foreground shadow-[3px_3px_0_0_var(--border)]">
               <Coins className="size-7" />
             </div>
             <div>
@@ -240,7 +249,11 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
           <Badge variant="accent">No local sources detected yet</Badge>
         ) : (
           snapshot.detected.map((source) => (
-            <Badge key={source} variant="accent" style={{ backgroundColor: SOURCE_COLORS[source] }}>
+            <Badge
+              key={source}
+              variant="accent"
+              style={{ backgroundColor: SOURCE_COLORS[source], color: SOURCE_FOREGROUND_COLORS[source] }}
+            >
               {SOURCE_LABELS[source]}
             </Badge>
           ))
@@ -391,7 +404,7 @@ function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
       <CardContent>
         <div className="flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row">
           <svg className="size-48 shrink-0" viewBox="0 0 190 190" role="img" aria-label="Cost breakdown by source">
-            <circle cx="95" cy="95" r={radius} fill="#fffdf4" stroke="#111" strokeWidth="8" />
+            <circle cx="95" cy="95" r={radius} fill="#ffffff" stroke="#111111" strokeWidth="8" />
             {rows.map((row) => {
               const length = total > 0 ? (row.costUSD / total) * circumference : 0
               const dashOffset = offset
@@ -534,11 +547,11 @@ function MonthlyTrend({ snapshot }: { snapshot: DashboardSnapshot }) {
       </CardHeader>
       <CardContent>
         <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full border-2 border-border bg-background">
-          <path d={path} fill="none" stroke="#111" strokeWidth="10" strokeLinejoin="round" />
-          <path d={path} fill="none" stroke="#ff6b35" strokeWidth="6" strokeLinejoin="round" />
+          <path d={path} fill="none" stroke="#111111" strokeWidth="10" strokeLinejoin="round" />
+          <path d={path} fill="none" stroke="#737373" strokeWidth="6" strokeLinejoin="round" />
           {points.map((point) => (
             <g key={point.month.month}>
-              <circle cx={point.x} cy={point.y} r="7" fill="#00c2ff" stroke="#111" strokeWidth="3" />
+              <circle cx={point.x} cy={point.y} r="7" fill="#f4f4f4" stroke="#111111" strokeWidth="3" />
               <title>{`${point.month.month}: ${formatUsd(point.month.costUSD)}`}</title>
             </g>
           ))}
@@ -562,7 +575,7 @@ function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
         <div className="grid grid-flow-col grid-rows-7 justify-start gap-1 overflow-x-auto pb-2">
           {cells.map((cell) => {
             const level = Math.ceil((cell.costUSD / maxCost) * 4)
-            const colors = ['#fffdf4', '#c8facc', '#ffdc58', '#ff8ec3', '#ff6b35']
+            const colors = ['#ffffff', '#e8e8e8', '#b5b5b5', '#737373', '#111111']
             return (
               <div
                 key={cell.date}
