@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --host 127.0.0.1 --port 6767 --strictPort",
-    "build": "vite build",
-    "start": "vite dev --host 127.0.0.1 --port 6767 --strictPort",
+    "dev": "vp dev --host 127.0.0.1 --port 6767 --strictPort",
+    "build": "vp build",
+    "start": "vp dev --host 127.0.0.1 --port 6767 --strictPort",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -30,6 +30,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.2.4"
+    "vite": "npm:@voidzero-dev/vite-plus-core@^0.2.4",
+    "vite-plus": "^0.2.4"
   }
 }

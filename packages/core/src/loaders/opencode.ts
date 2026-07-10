@@ -68,7 +68,12 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<UnifiedTokenEve
 		const db = new DatabaseSync(dbPath, { readOnly: true });
 		try {
 			const rows = db
-				.prepare('SELECT session_id, time_created, data FROM message ORDER BY time_created ASC')
+				.prepare(
+					`SELECT session_id, time_created, data
+					 FROM message
+					 WHERE json_type(data, '$.tokens') = 'object'
+					 ORDER BY time_created ASC`,
+				)
 				.all() as Array<{ session_id: string; time_created: number; data: string }>;
 			const events: UnifiedTokenEvent[] = [];
 

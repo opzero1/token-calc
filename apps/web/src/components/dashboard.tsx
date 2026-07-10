@@ -28,21 +28,21 @@ const SOURCE_LABELS: Record<Source, string> = {
 }
 
 const SOURCE_COLORS: Record<Source, string> = {
-  'claude-code': '#111111',
-  codex: '#3a3a3a',
-  gemini: '#626262',
-  opencode: '#8a8a8a',
-  amp: '#b5b5b5',
-  pi: '#dedede',
+  'claude-code': '#f97360',
+  codex: '#7cf3b5',
+  gemini: '#60a5fa',
+  opencode: '#a78bfa',
+  amp: '#fbbf24',
+  pi: '#f472b6',
 }
 
 const SOURCE_FOREGROUND_COLORS: Record<Source, string> = {
-  'claude-code': '#ffffff',
-  codex: '#ffffff',
-  gemini: '#ffffff',
-  opencode: '#111111',
-  amp: '#111111',
-  pi: '#111111',
+  'claude-code': '#190906',
+  codex: '#07100c',
+  gemini: '#07101d',
+  opencode: '#110b20',
+  amp: '#171005',
+  pi: '#1c0712',
 }
 
 const RANGES: Array<{ value: TimeRange; label: string }> = [
@@ -55,7 +55,9 @@ const RANGES: Array<{ value: TimeRange; label: string }> = [
 ]
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US', { notation: value >= 1_000_000 ? 'compact' : 'standard' }).format(value)
+  return new Intl.NumberFormat('en-US', {
+    notation: value >= 1_000_000 ? 'compact' : 'standard',
+  }).format(value)
 }
 
 function formatUsd(value: number, compact = false) {
@@ -73,16 +75,24 @@ function totalTokens(tokens: DashboardSnapshot['totals']['tokens']) {
 
 function tokenBreakdown(tokens: DashboardSnapshot['totals']['tokens']) {
   return [
-    { key: 'input', label: 'In', value: tokens.input, className: 'bg-[#111111]' },
-    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-[#404040]' },
-    { key: 'cacheCreation', label: 'Cache write', value: tokens.cacheCreation, className: 'bg-[#737373]' },
-    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-[#a3a3a3]' },
-    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#d4d4d4]' },
+    { key: 'input', label: 'In', value: tokens.input, className: 'bg-[#7cf3b5]' },
+    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-[#60a5fa]' },
+    {
+      key: 'cacheCreation',
+      label: 'Cache write',
+      value: tokens.cacheCreation,
+      className: 'bg-[#a78bfa]',
+    },
+    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-[#fbbf24]' },
+    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#f472b6]' },
   ].filter((item) => item.value > 0)
 }
 
 function shortModel(model: string) {
-  return model.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/^\[pi\]\s*/, '')
+  return model
+    .replace(/^claude-/, '')
+    .replace(/-\d{8}$/, '')
+    .replace(/^\[pi\]\s*/, '')
 }
 
 function maxOf(values: number[]) {
@@ -201,35 +211,72 @@ interface DashboardProps {
   onRefresh: () => void
 }
 
+export function DashboardLoading() {
+  return (
+    <main className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
+      <header className="rounded-3xl border border-border bg-secondary-background/80 p-5 shadow-shadow backdrop-blur-xl sm:p-7">
+        <div className="flex items-center gap-4">
+          <div className="skeleton size-12 shrink-0 rounded-2xl" />
+          <div className="grid flex-1 gap-2">
+            <div className="skeleton h-7 w-44 rounded-lg" />
+            <div className="skeleton h-4 max-w-xl rounded-lg" />
+          </div>
+        </div>
+      </header>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <RefreshCw className="size-4 animate-spin text-main" />
+        Scanning local usage data...
+      </div>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Card key={index} className="p-5">
+            <div className="skeleton h-3 w-20 rounded" />
+            <div className="skeleton mt-4 h-8 w-28 rounded-lg" />
+          </Card>
+        ))}
+      </section>
+      <Card className="h-80 p-6">
+        <div className="skeleton h-5 w-48 rounded" />
+        <div className="skeleton mt-8 h-56 rounded-2xl" />
+      </Card>
+    </main>
+  )
+}
+
 export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefresh }: DashboardProps) {
   const averageCost = snapshot.totals.activeDays > 0 ? snapshot.totals.costUSD / snapshot.totals.activeDays : 0
   const latestGenerated = new Date(snapshot.generated).toLocaleString()
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <header className="border-2 border-border bg-main p-4 text-main-foreground shadow-shadow sm:p-5">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
+      <header className="rounded-3xl border border-border bg-secondary-background/80 p-5 shadow-shadow backdrop-blur-xl sm:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
-            <div className="flex size-12 shrink-0 items-center justify-center border-2 border-border bg-accent text-foreground shadow-[3px_3px_0_0_var(--border)]">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-main text-main-foreground shadow-[0_0_40px_rgba(124,243,181,0.18)]">
               <Coins className="size-7" />
             </div>
             <div>
-              <h1 className="font-heading text-3xl font-black leading-none sm:text-5xl">token-calc</h1>
-              <p className="mt-2 max-w-2xl text-sm font-bold sm:text-base">
-                Local AI coding token usage and estimated spend across Claude Code, Codex, Gemini, OpenCode, Amp,
-                and Pi-Agent.
+              <div className="mb-1 font-heading text-[10px] font-bold uppercase tracking-[0.24em] text-main">
+                Local usage intelligence
+              </div>
+              <h1 className="font-heading text-3xl font-bold leading-none tracking-[-0.06em] sm:text-5xl">
+                token-calc
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Local AI coding token usage and estimated spend across Claude Code, Codex, Gemini, OpenCode, Amp, and
+                Pi-Agent.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <TabsList>
+          <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center lg:w-auto">
+            <TabsList className="w-full sm:w-auto">
               {RANGES.map((item) => (
                 <TabsTrigger key={item.value} active={range === item.value} onClick={() => onRangeChange(item.value)}>
                   {item.label}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <Button className="shrink-0" onClick={onRefresh} variant="neutral">
+            <Button className="shrink-0" onClick={onRefresh} variant="neutral" disabled={isRefreshing}>
               <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
               Refresh
             </Button>
@@ -237,14 +284,12 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
         </div>
       </header>
 
-      <section className="flex flex-wrap items-center gap-2 text-sm font-bold">
+      <section className="flex flex-wrap items-center gap-2 text-sm">
         <Badge variant="neutral">
           <Database className="size-3.5" />
           {snapshot.totalEventCount.toLocaleString()} total events
         </Badge>
-        <Badge variant="neutral">
-          Generated {latestGenerated}
-        </Badge>
+        <Badge variant="neutral">Generated {latestGenerated}</Badge>
         {snapshot.detected.length === 0 ? (
           <Badge variant="accent">No local sources detected yet</Badge>
         ) : (
@@ -252,7 +297,10 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
             <Badge
               key={source}
               variant="accent"
-              style={{ backgroundColor: SOURCE_COLORS[source], color: SOURCE_FOREGROUND_COLORS[source] }}
+              style={{
+                backgroundColor: SOURCE_COLORS[source],
+                color: SOURCE_FOREGROUND_COLORS[source],
+              }}
             >
               {SOURCE_LABELS[source]}
             </Badge>
@@ -260,7 +308,7 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
         )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard icon={<CircleDollarSign />} label="Total Cost" value={formatUsd(snapshot.totals.costUSD)} />
         <MetricCard icon={<Coins />} label="Total Tokens" value={formatNumber(snapshot.totals.totalTokens)} />
         <MetricCard icon={<CalendarDays />} label="Active Days" value={formatNumber(snapshot.totals.activeDays)} />
@@ -290,13 +338,15 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
 
 function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <Card className="metric-card p-4">
+    <Card className="metric-card overflow-hidden p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-black uppercase text-muted-foreground">{label}</div>
-          <div className="mt-2 break-words font-heading text-2xl font-black leading-none">{value}</div>
+          <div className="font-heading text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            {label}
+          </div>
+          <div className="mt-3 break-words font-heading text-2xl font-bold leading-none tracking-tight">{value}</div>
         </div>
-        <div className="flex size-10 shrink-0 items-center justify-center border-2 border-border bg-secondary-background shadow-[2px_2px_0_0_var(--border)]">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-white/5 text-main">
           {icon}
         </div>
       </div>
@@ -306,14 +356,14 @@ function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: stri
 
 function EmptyState({ errors }: { errors: DashboardSnapshot['errors'] }) {
   return (
-    <Card className="bg-accent p-6">
-      <h2 className="font-heading text-2xl font-black">No usage data found</h2>
-      <p className="mt-2 max-w-3xl font-bold">
+    <Card className="p-6">
+      <h2 className="font-heading text-2xl font-bold">No usage data found</h2>
+      <p className="mt-2 max-w-3xl text-muted-foreground">
         token-calc scans the same local locations as the reference project. Use at least one supported AI coding tool,
         then refresh this dashboard.
       </p>
       {errors.length > 0 ? (
-        <div className="mt-4 border-2 border-border bg-secondary-background p-3 text-sm font-bold">
+        <div className="mt-4 rounded-xl border border-border bg-background p-3 text-sm">
           {errors.map((error) => (
             <div key={error.source}>
               {SOURCE_LABELS[error.source]}: {error.error}
@@ -336,22 +386,22 @@ function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
         <CardTitle>Daily Cost Timeline</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-72 overflow-hidden px-6 pb-2">
+        <div className="h-72 overflow-x-auto px-1 pb-2 sm:px-2">
           <div
-            className="grid h-full items-end gap-[3px]"
-            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+            className="grid h-full items-end gap-1"
+            style={{
+              gridTemplateColumns: `repeat(${days.length}, minmax(4px, 1fr))`,
+              minWidth: `${Math.max(560, days.length * 8)}px`,
+            }}
           >
             {days.map((day, index) => {
-              const shouldLabel =
-                index === 0 ||
-                index === days.length - 1 ||
-                day.date.endsWith('-01')
+              const shouldLabel = index === 0 || index === days.length - 1 || day.date.endsWith('-01')
 
               return (
                 <div key={day.date} className="flex min-w-0 flex-col items-center gap-2">
                   <div
                     className={cn(
-                      'flex h-56 w-full min-w-0 items-end border border-border bg-background',
+                      'flex h-56 w-full min-w-0 items-end overflow-hidden rounded-t-sm bg-background',
                       day.isFuture && 'bg-secondary-background opacity-70',
                     )}
                     title={`${day.date}: ${formatNumber(totalTokens(day.tokens))} tokens, ${formatUsd(day.costUSD)}`}
@@ -368,8 +418,11 @@ function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
                             <div
                               key={source}
                               title={`${day.date} ${SOURCE_LABELS[source]} ${formatUsd(item?.costUSD ?? 0)}`}
-                              className="border-t border-border first:border-t-0"
-                              style={{ height: `${height}%`, backgroundColor: SOURCE_COLORS[source] }}
+                              className="border-t border-black/20 first:border-t-0"
+                              style={{
+                                height: `${height}%`,
+                                backgroundColor: SOURCE_COLORS[source],
+                              }}
                             />
                           )
                         })}
@@ -404,7 +457,14 @@ function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
       <CardContent>
         <div className="flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row">
           <svg className="size-48 shrink-0" viewBox="0 0 190 190" role="img" aria-label="Cost breakdown by source">
-            <circle cx="95" cy="95" r={radius} fill="#ffffff" stroke="#111111" strokeWidth="8" />
+            <circle
+              cx="95"
+              cy="95"
+              r={radius}
+              fill="var(--secondary-background)"
+              stroke="var(--border)"
+              strokeWidth="8"
+            />
             {rows.map((row) => {
               const length = total > 0 ? (row.costUSD / total) * circumference : 0
               const dashOffset = offset
@@ -434,12 +494,18 @@ function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
           </svg>
           <div className="grid w-full gap-2">
             {rows.map((row) => (
-              <div key={row.source} className="flex items-center justify-between gap-3 border-2 border-border bg-background px-3 py-2">
+              <div
+                key={row.source}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white/[0.03] px-3 py-2"
+              >
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="size-4 shrink-0 border-2 border-border" style={{ backgroundColor: SOURCE_COLORS[row.source] }} />
-                  <span className="truncate font-black">{SOURCE_LABELS[row.source]}</span>
+                  <span
+                    className="size-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: SOURCE_COLORS[row.source] }}
+                  />
+                  <span className="truncate font-semibold">{SOURCE_LABELS[row.source]}</span>
                 </div>
-                <span className="font-black">{formatUsd(row.costUSD)}</span>
+                <span className="font-heading text-sm font-bold">{formatUsd(row.costUSD)}</span>
               </div>
             ))}
           </div>
@@ -460,7 +526,7 @@ function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <CardTitle>Top Models</CardTitle>
-        <TabsList className="shadow-[3px_3px_0_0_var(--border)]">
+        <TabsList>
           <TabsTrigger active={activeTab === 'cost'} onClick={() => setActiveTab('cost')}>
             Cost
           </TabsTrigger>
@@ -472,56 +538,68 @@ function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
       <CardContent className="grid gap-3">
         {activeTab === 'cost'
           ? models.map((model, index) => (
-            <div key={model.model} className="grid gap-1">
-              <div className="flex items-center justify-between gap-3 text-sm font-black">
-                <span className="truncate">
-                  {index + 1}. {shortModel(model.model)}
-                </span>
-                <span>{formatUsd(model.costUSD)}</span>
-              </div>
-              <div className="h-5 border-2 border-border bg-background">
-                <div className="h-full border-r-2 border-border bg-accent" style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }} />
-              </div>
-            </div>
-          ))
-          : tokenModels.map((model, index) => {
-            const total = totalTokens(model.tokens)
-            const breakdown = tokenBreakdown(model.tokens)
-
-            return (
-              <div key={model.model} className="grid gap-1.5">
-                <div className="flex items-center justify-between gap-3 text-sm font-black">
+              <div key={model.model} className="grid gap-1">
+                <div className="flex items-center justify-between gap-3 text-sm font-semibold">
                   <span className="truncate">
                     {index + 1}. {shortModel(model.model)}
                   </span>
-                  <span>{formatNumber(total)}</span>
-                </div>
-                <div className="h-5 border-2 border-border bg-background" title={`${formatNumber(total)} total tokens`}>
-                  <div className="h-full border-r-2 border-border bg-accent" style={{ width: `${Math.max(2, (total / maxTokens) * 100)}%` }} />
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[11px] font-black uppercase">
                   <span>{formatUsd(model.costUSD)}</span>
-                  <span>{formatNumber(model.eventCount)} events</span>
                 </div>
-                <div className="flex h-3 overflow-hidden border-2 border-border bg-background" title={breakdown.map((item) => `${item.label}: ${formatNumber(item.value)}`).join(', ')}>
-                  {breakdown.map((item) => (
-                    <div
-                      key={item.key}
-                      className={cn('h-full border-r-2 border-border last:border-r-0', item.className)}
-                      style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%` }}
-                    />
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold">
-                  {breakdown.map((item) => (
-                    <span key={item.key} className="whitespace-nowrap">
-                      {item.label}: {formatNumber(item.value)}
-                    </span>
-                  ))}
+                <div className="h-2 overflow-hidden rounded-full bg-background">
+                  <div
+                    className="h-full rounded-full bg-main"
+                    style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }}
+                  />
                 </div>
               </div>
-            )
-          })}
+            ))
+          : tokenModels.map((model, index) => {
+              const total = totalTokens(model.tokens)
+              const breakdown = tokenBreakdown(model.tokens)
+
+              return (
+                <div key={model.model} className="grid gap-1.5">
+                  <div className="flex items-center justify-between gap-3 text-sm font-semibold">
+                    <span className="truncate">
+                      {index + 1}. {shortModel(model.model)}
+                    </span>
+                    <span>{formatNumber(total)}</span>
+                  </div>
+                  <div
+                    className="h-2 overflow-hidden rounded-full bg-background"
+                    title={`${formatNumber(total)} total tokens`}
+                  >
+                    <div
+                      className="h-full rounded-full bg-main"
+                      style={{ width: `${Math.max(2, (total / maxTokens) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-[11px] font-black uppercase">
+                    <span>{formatUsd(model.costUSD)}</span>
+                    <span>{formatNumber(model.eventCount)} events</span>
+                  </div>
+                  <div
+                    className="flex h-2 overflow-hidden rounded-full bg-background"
+                    title={breakdown.map((item) => `${item.label}: ${formatNumber(item.value)}`).join(', ')}
+                  >
+                    {breakdown.map((item) => (
+                      <div
+                        key={item.key}
+                        className={cn('h-full border-r border-background last:border-r-0', item.className)}
+                        style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold">
+                    {breakdown.map((item) => (
+                      <span key={item.key} className="whitespace-nowrap">
+                        {item.label}: {formatNumber(item.value)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
       </CardContent>
     </Card>
   )
@@ -546,12 +624,15 @@ function MonthlyTrend({ snapshot }: { snapshot: DashboardSnapshot }) {
         <CardTitle>Monthly Trend</CardTitle>
       </CardHeader>
       <CardContent>
-        <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full border-2 border-border bg-background">
-          <path d={path} fill="none" stroke="#111111" strokeWidth="10" strokeLinejoin="round" />
-          <path d={path} fill="none" stroke="#737373" strokeWidth="6" strokeLinejoin="round" />
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-64 w-full rounded-xl border border-border bg-background/60"
+        >
+          <path d={path} fill="none" stroke="rgba(124, 243, 181, 0.14)" strokeWidth="12" strokeLinejoin="round" />
+          <path d={path} fill="none" stroke="var(--main)" strokeWidth="4" strokeLinejoin="round" />
           {points.map((point) => (
             <g key={point.month.month}>
-              <circle cx={point.x} cy={point.y} r="7" fill="#f4f4f4" stroke="#111111" strokeWidth="3" />
+              <circle cx={point.x} cy={point.y} r="6" fill="var(--background)" stroke="var(--main)" strokeWidth="3" />
               <title>{`${point.month.month}: ${formatUsd(point.month.costUSD)}`}</title>
             </g>
           ))}
@@ -575,12 +656,12 @@ function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
         <div className="grid grid-flow-col grid-rows-7 justify-start gap-1 overflow-x-auto pb-2">
           {cells.map((cell) => {
             const level = Math.ceil((cell.costUSD / maxCost) * 4)
-            const colors = ['#ffffff', '#e8e8e8', '#b5b5b5', '#737373', '#111111']
+            const colors = ['#111722', '#163326', '#21583b', '#3a9a67', '#7cf3b5']
             return (
               <div
                 key={cell.date}
                 className={cn(
-                  'size-5 border-2 border-border',
+                  'size-5 rounded-[5px] border border-border',
                   !cell.inYear && 'invisible',
                   cell.isFuture && 'bg-secondary-background opacity-70',
                 )}
@@ -640,17 +721,37 @@ function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
               <SortableHead label="Date" sortKey="date" active={sortKey === 'date'} onSort={setSortKey} />
               <TableHead>Sources</TableHead>
               <TableHead>Models</TableHead>
-              <SortableHead label="Tokens" sortKey="tokens" active={sortKey === 'tokens'} onSort={setSortKey} className="text-right" />
-              <SortableHead label="Cost" sortKey="cost" active={sortKey === 'cost'} onSort={setSortKey} className="text-right" />
-              <SortableHead label="Events" sortKey="events" active={sortKey === 'events'} onSort={setSortKey} className="text-right" />
+              <SortableHead
+                label="Tokens"
+                sortKey="tokens"
+                active={sortKey === 'tokens'}
+                onSort={setSortKey}
+                className="text-right"
+              />
+              <SortableHead
+                label="Cost"
+                sortKey="cost"
+                active={sortKey === 'cost'}
+                onSort={setSortKey}
+                className="text-right"
+              />
+              <SortableHead
+                label="Events"
+                sortKey="events"
+                active={sortKey === 'events'}
+                onSort={setSortKey}
+                className="text-right"
+              />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((day) => (
               <React.Fragment key={day.date}>
-                <TableRow className="cursor-pointer hover:bg-muted" onClick={() => toggle(day.date)}>
+                <TableRow className="cursor-pointer hover:bg-white/[0.04]" onClick={() => toggle(day.date)}>
                   <TableCell className="font-black">
-                    <ChevronDown className={cn('mr-2 inline size-4 transition-transform', expanded.has(day.date) && 'rotate-180')} />
+                    <ChevronDown
+                      className={cn('mr-2 inline size-4 transition-transform', expanded.has(day.date) && 'rotate-180')}
+                    />
                     {day.date}
                   </TableCell>
                   <TableCell>{day.sources.map((source) => SOURCE_LABELS[source]).join(', ')}</TableCell>
@@ -661,7 +762,7 @@ function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
                 </TableRow>
                 {expanded.has(day.date)
                   ? (detailByDate.get(day.date) ?? []).map((detail) => (
-                      <TableRow key={`${detail.date}:${detail.source}:${detail.model}`} className="bg-secondary-background">
+                      <TableRow key={`${detail.date}:${detail.source}:${detail.model}`} className="bg-white/[0.025]">
                         <TableCell />
                         <TableCell className="font-black">{SOURCE_LABELS[detail.source]}</TableCell>
                         <TableCell>{shortModel(detail.model)}</TableCell>
@@ -696,7 +797,7 @@ function SortableHead({
   return (
     <TableHead className={className}>
       <button
-        className={cn('inline-flex items-center gap-1 font-heading font-black', active && 'underline decoration-2 underline-offset-4')}
+        className={cn('inline-flex items-center gap-1 font-heading font-bold', active && 'text-main')}
         type="button"
         onClick={() => onSort(sortKey)}
       >

@@ -5,13 +5,15 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --filter @token-calc/web dev",
-    "build": "turbo build",
-    "typecheck": "turbo typecheck",
-    "lint": "turbo typecheck",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "vp lint",
+    "test": "vp test run",
     "start": "pnpm --filter @token-calc/web dev"
   },
   "devDependencies": {
-    "turbo": "^2.5.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-plus": "^0.2.4",
+    "vitest": "^4.1.10"
   }
 }

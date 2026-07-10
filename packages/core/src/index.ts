@@ -39,7 +39,15 @@ function filterEventsByRange(
 export async function loadDashboardSnapshot(range: TimeRange = '90'): Promise<DashboardSnapshot> {
   const now = Date.now()
   const cached = snapshotCache.get(range)
-  if (cached?.value && now - cached.timestamp < SNAPSHOT_CACHE_TTL_MS) {
+  if (cached?.value) {
+    if (now - cached.timestamp >= SNAPSHOT_CACHE_TTL_MS && !cached.inFlight) {
+      const inFlight = loadFreshDashboardSnapshot(range)
+      snapshotCache.set(range, { ...cached, inFlight })
+      void inFlight.then(
+        (value) => snapshotCache.set(range, { timestamp: Date.now(), value }),
+        () => snapshotCache.set(range, cached),
+      )
+    }
     return cached.value
   }
   if (cached?.inFlight) {

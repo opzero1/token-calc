@@ -66,8 +66,10 @@ You can point token-calc at custom data locations with these environment variabl
 ```bash
 pnpm dev
 pnpm build
+pnpm lint
 pnpm typecheck
+pnpm test
 pnpm --filter @token-calc/cli dev -- --range all
 ```
 
-`pnpm dev` starts the web dashboard. `pnpm build` and `pnpm typecheck` run across the workspace.
+`pnpm dev` starts the Vite+ web dashboard. Build, lint, typecheck, and test commands run from the pnpm workspace root.

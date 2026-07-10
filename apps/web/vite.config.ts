@@ -2,7 +2,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, lazyPlugins } from 'vite-plus'
 
 export default defineConfig({
   server: {
@@ -15,5 +15,5 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  plugins: [tanstackStart(), tailwindcss(), react()],
+  plugins: lazyPlugins(async () => [tanstackStart(), tailwindcss(), react()]),
 })

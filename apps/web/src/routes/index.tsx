@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start'
 import type { DashboardSnapshot, TimeRange } from '@token-calc/core'
 import * as React from 'react'
 
-import { Dashboard } from '@/components/dashboard'
+import { Dashboard, DashboardLoading } from '@/components/dashboard'
 
 const allowedRanges = new Set<TimeRange>(['7', '30', '90', '180', '365', 'all'])
 
@@ -20,36 +20,46 @@ const getDashboardSnapshot = createServerFn({ method: 'GET' })
 
 export const Route = createFileRoute('/')({
   component: Home,
-  loader: () => getDashboardSnapshot({ data: '90' }),
 })
 
 function Home() {
-  const initialSnapshot = Route.useLoaderData() as DashboardSnapshot
   const [range, setRange] = React.useState<TimeRange>('90')
-  const [snapshot, setSnapshot] = React.useState<DashboardSnapshot>(initialSnapshot)
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [snapshot, setSnapshot] = React.useState<DashboardSnapshot | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(true)
 
-  const refresh = React.useCallback(async (nextRange: TimeRange = range) => {
-    setIsRefreshing(true)
-    try {
-      setSnapshot(await getDashboardSnapshot({ data: nextRange }))
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [range])
+  const refresh = React.useCallback(
+    async (nextRange: TimeRange = range) => {
+      setIsRefreshing(true)
+      try {
+        setSnapshot(await getDashboardSnapshot({ data: nextRange }))
+      } finally {
+        setIsRefreshing(false)
+      }
+    },
+    [range],
+  )
 
-  const handleRangeChange = React.useCallback((nextRange: TimeRange) => {
-    setRange(nextRange)
-    void refresh(nextRange)
-  }, [refresh])
+  const handleRangeChange = React.useCallback(
+    (nextRange: TimeRange) => {
+      setRange(nextRange)
+      void refresh(nextRange)
+    },
+    [refresh],
+  )
 
   React.useEffect(() => {
+    void refresh(range)
+
     const interval = window.setInterval(() => {
       void refresh(range)
     }, 5000)
 
     return () => window.clearInterval(interval)
   }, [range, refresh])
+
+  if (!snapshot) {
+    return <DashboardLoading />
+  }
 
   return (
     <Dashboard
