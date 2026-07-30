@@ -52,7 +52,7 @@ function Home() {
 
     const interval = window.setInterval(() => {
       void refresh(range)
-    }, 5000)
+    }, 60_000)
 
     return () => window.clearInterval(interval)
   }, [range, refresh])

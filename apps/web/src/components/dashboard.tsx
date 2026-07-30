@@ -6,14 +6,17 @@ import {
   ChevronDown,
   CircleDollarSign,
   Coins,
-  Database,
+  Gauge,
+  Layers3,
   RefreshCw,
+  ScanLine,
 } from 'lucide-react'
 import * as React from 'react'
 
+import { Glass } from '@/components/canvasui/Glass'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
@@ -29,20 +32,11 @@ const SOURCE_LABELS: Record<Source, string> = {
 
 const SOURCE_COLORS: Record<Source, string> = {
   'claude-code': '#f97360',
-  codex: '#7cf3b5',
+  codex: '#d9ff63',
   gemini: '#60a5fa',
   opencode: '#a78bfa',
   amp: '#fbbf24',
   pi: '#f472b6',
-}
-
-const SOURCE_FOREGROUND_COLORS: Record<Source, string> = {
-  'claude-code': '#190906',
-  codex: '#07100c',
-  gemini: '#07101d',
-  opencode: '#110b20',
-  amp: '#171005',
-  pi: '#1c0712',
 }
 
 const RANGES: Array<{ value: TimeRange; label: string }> = [
@@ -60,6 +54,13 @@ function formatNumber(value: number) {
   }).format(value)
 }
 
+function formatCompactTokens(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
 function formatUsd(value: number, compact = false) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -71,6 +72,48 @@ function formatUsd(value: number, compact = false) {
 
 function totalTokens(tokens: DashboardSnapshot['totals']['tokens']) {
   return tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead + tokens.reasoning
+}
+
+function AnimatedTokenCount({ value }: { value: number }) {
+  const initialValue = Math.max(0, value - Math.min(Math.max(value * 0.004, 1_000_000), 100_000_000))
+  const [displayValue, setDisplayValue] = React.useState(initialValue)
+  const displayValueRef = React.useRef(initialValue)
+
+  React.useEffect(() => {
+    const from = displayValueRef.current
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || from === value) {
+      displayValueRef.current = value
+      setDisplayValue(value)
+      return
+    }
+
+    const startedAt = performance.now()
+    const duration = 1_200
+    let frameId = 0
+
+    function animate(now: number) {
+      const progress = Math.min(1, (now - startedAt) / duration)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const nextValue = Math.round(from + (value - from) * eased)
+      displayValueRef.current = nextValue
+      setDisplayValue(nextValue)
+      if (progress < 1) frameId = window.requestAnimationFrame(animate)
+    }
+
+    frameId = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frameId)
+  }, [value])
+
+  return (
+    <div aria-live="polite">
+      <div className="font-heading text-3xl font-medium leading-none tracking-[-0.05em] sm:text-4xl">
+        {formatCompactTokens(displayValue)}
+      </div>
+      <div className="mt-2 font-heading text-[11px] tabular-nums text-muted-foreground">
+        {displayValue.toLocaleString()} tokens indexed
+      </div>
+    </div>
+  )
 }
 
 function tokenBreakdown(tokens: DashboardSnapshot['totals']['tokens']) {
@@ -213,152 +256,243 @@ interface DashboardProps {
 
 export function DashboardLoading() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
-      <header className="rounded-3xl border border-border bg-secondary-background/80 p-5 shadow-shadow backdrop-blur-xl sm:p-7">
-        <div className="flex items-center gap-4">
-          <div className="skeleton size-12 shrink-0 rounded-2xl" />
-          <div className="grid flex-1 gap-2">
-            <div className="skeleton h-7 w-44 rounded-lg" />
-            <div className="skeleton h-4 max-w-xl rounded-lg" />
+    <main className="app-shell min-h-screen">
+      <header className="topbar">
+        <div className="flex items-center gap-3">
+          <div className="skeleton size-9 shrink-0 rounded-full" />
+          <div className="grid gap-1.5">
+            <div className="skeleton h-3 w-24 rounded" />
+            <div className="skeleton h-2 w-16 rounded" />
           </div>
         </div>
       </header>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <RefreshCw className="size-4 animate-spin text-main" />
-        Scanning local usage data...
+      <div className="dashboard-content dashboard-stack mx-auto flex w-full max-w-[1500px] flex-col">
+        <section className="hero-panel min-h-[330px]">
+          <div className="hero-content grid h-full lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid content-center gap-5">
+              <div className="skeleton h-3 w-40 rounded" />
+              <div className="skeleton h-20 max-w-2xl rounded-2xl" />
+              <div className="skeleton h-4 max-w-lg rounded" />
+            </div>
+            <div className="skeleton min-h-52 rounded-[2rem]" />
+          </div>
+        </section>
+        <div className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <RefreshCw className="size-3.5 animate-spin text-main" />
+          Reading local model activity
+        </div>
+        <section className="content-grid grid sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Card key={index} className="h-32 p-[var(--card-padding)]">
+              <div className="skeleton h-3 w-20 rounded" />
+              <div className="skeleton mt-5 h-8 w-28 rounded-lg" />
+            </Card>
+          ))}
+        </section>
       </div>
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }, (_, index) => (
-          <Card key={index} className="p-5">
-            <div className="skeleton h-3 w-20 rounded" />
-            <div className="skeleton mt-4 h-8 w-28 rounded-lg" />
-          </Card>
-        ))}
-      </section>
-      <Card className="h-80 p-6">
-        <div className="skeleton h-5 w-48 rounded" />
-        <div className="skeleton mt-8 h-56 rounded-2xl" />
-      </Card>
     </main>
   )
 }
 
 export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefresh }: DashboardProps) {
   const averageCost = snapshot.totals.activeDays > 0 ? snapshot.totals.costUSD / snapshot.totals.activeDays : 0
-  const latestGenerated = new Date(snapshot.generated).toLocaleString()
+  const latestGenerated = new Date(snapshot.generated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const rangeLabel = RANGES.find((item) => item.value === range)?.label ?? range
+  const tokenGoal = (Math.floor(snapshot.totals.totalTokens / 1_000_000_000) + 1) * 1_000_000_000
+  const tokensToGoal = tokenGoal - snapshot.totals.totalTokens
+  const tokenGoalProgress = Math.min(100, (snapshot.totals.totalTokens / tokenGoal) * 100)
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8 lg:px-10">
-      <header className="rounded-3xl border border-border bg-secondary-background/80 p-5 shadow-shadow backdrop-blur-xl sm:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-main text-main-foreground shadow-[0_0_40px_rgba(124,243,181,0.18)]">
-              <Coins className="size-7" />
+    <Glass
+      shape="circle"
+      size={112}
+      ior={1.32}
+      edge={0.72}
+      bevel={4}
+      depth={180}
+      aberration={0.55}
+      reflection={0.7}
+      shine={0.35}
+      zoom={1.16}
+      follow={0.16}
+      targets="[data-glass-target]"
+      className="min-h-screen"
+    >
+      <div className="app-shell min-h-screen">
+        <header className="topbar">
+          <div className="flex items-center gap-3">
+            <div className="brand-mark">
+              <ScanLine className="size-[18px]" />
             </div>
             <div>
-              <div className="mb-1 font-heading text-[10px] font-bold uppercase tracking-[0.24em] text-main">
-                Local usage intelligence
+              <div className="font-heading text-sm font-semibold tracking-[-0.02em]">token / lens</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Local intelligence
               </div>
-              <h1 className="font-heading text-3xl font-bold leading-none tracking-[-0.06em] sm:text-5xl">
-                token-calc
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Local AI coding token usage and estimated spend across Claude Code, Codex, Gemini, OpenCode, Amp, and
-                Pi-Agent.
-              </p>
             </div>
           </div>
-          <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center lg:w-auto">
-            <TabsList className="w-full sm:w-auto">
-              {RANGES.map((item) => (
-                <TabsTrigger key={item.value} active={range === item.value} onClick={() => onRangeChange(item.value)}>
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <Button className="shrink-0" onClick={onRefresh} variant="neutral" disabled={isRefreshing}>
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+              <span className={cn('status-dot', isRefreshing && 'is-active')} />
+              {isRefreshing ? 'Scanning' : `Synced ${latestGenerated}`}
+            </div>
+            <Button aria-label="Refresh usage data" onClick={onRefresh} variant="neutral" size="icon" disabled={isRefreshing}>
               <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
-              Refresh
             </Button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <section className="flex flex-wrap items-center gap-2 text-sm">
-        <Badge variant="neutral">
-          <Database className="size-3.5" />
-          {snapshot.totalEventCount.toLocaleString()} total events
-        </Badge>
-        <Badge variant="neutral">Generated {latestGenerated}</Badge>
-        {snapshot.detected.length === 0 ? (
-          <Badge variant="accent">No local sources detected yet</Badge>
-        ) : (
-          snapshot.detected.map((source) => (
-            <Badge
-              key={source}
-              variant="accent"
-              style={{
-                backgroundColor: SOURCE_COLORS[source],
-                color: SOURCE_FOREGROUND_COLORS[source],
-              }}
-            >
-              {SOURCE_LABELS[source]}
-            </Badge>
-          ))
-        )}
-      </section>
+        <main className="dashboard-content dashboard-stack mx-auto flex w-full max-w-[1500px] flex-col">
+          <section className="hero-panel">
+            <div className="hero-grid" aria-hidden />
+            <div className="hero-glow" aria-hidden />
+            <div className="hero-content relative grid lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+              <div className="flex flex-col items-start">
+                <div className="eyebrow">
+                  <span className="status-dot is-active" />
+                  Usage observatory / {rangeLabel}
+                </div>
+                <h1 className="mt-7 max-w-3xl font-heading text-[clamp(2.75rem,7vw,6.75rem)] font-medium leading-[0.86] tracking-[-0.08em]">
+                  See what your <span className="text-main">agents</span> consume.
+                </h1>
+                <p className="mt-6 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+                  A private, local readout of token volume and estimated model spend across every coding agent on this
+                  machine.
+                </p>
+                <TabsList className="mt-7 w-full sm:w-auto" aria-label="Usage window">
+                  {RANGES.map((item) => (
+                    <TabsTrigger key={item.value} active={range === item.value} onClick={() => onRangeChange(item.value)}>
+                      {item.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard icon={<CircleDollarSign />} label="Total Cost" value={formatUsd(snapshot.totals.costUSD)} />
-        <MetricCard icon={<Coins />} label="Total Tokens" value={formatNumber(snapshot.totals.totalTokens)} />
-        <MetricCard icon={<CalendarDays />} label="Active Days" value={formatNumber(snapshot.totals.activeDays)} />
-        <MetricCard icon={<Activity />} label="Cost / Day" value={formatUsd(averageCost)} />
-        <MetricCard icon={<Database />} label="Events" value={formatNumber(snapshot.totals.eventCount)} />
-      </section>
-
-      {snapshot.totals.eventCount === 0 ? (
-        <EmptyState errors={snapshot.errors} />
-      ) : (
-        <>
-          <DailyStackedBars snapshot={snapshot} />
-          <section className="grid gap-5 lg:grid-cols-[0.8fr_1fr]">
-            <SourceDonut snapshot={snapshot} />
-            <TopModels snapshot={snapshot} />
+              <div className="spend-readout" data-glass-target>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="eyebrow">Estimated spend</span>
+                  <CircleDollarSign className="size-5 text-main" />
+                </div>
+                <div className="mt-12 font-heading text-[clamp(3.25rem,7vw,6rem)] font-medium leading-none tracking-[-0.08em]">
+                  {formatUsd(snapshot.totals.costUSD)}
+                </div>
+                <div className="mt-5 border-t border-border pt-5">
+                  <div className="flex items-start justify-between gap-5">
+                    <div>
+                      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Live token volume
+                      </div>
+                      <AnimatedTokenCount value={snapshot.totals.totalTokens} />
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Next goal
+                      </div>
+                      <div className="mt-2 font-heading text-xl font-medium text-main">{formatCompactTokens(tokenGoal)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+                    <div
+                      className="h-full rounded-full bg-main transition-[width] duration-1000 ease-out"
+                      style={{ width: `${tokenGoalProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    <span>{tokenGoalProgress.toFixed(1)}% complete</span>
+                    <span>{formatCompactTokens(tokensToGoal)} remaining</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </section>
-          <section className="grid gap-5 lg:grid-cols-2">
-            <MonthlyTrend snapshot={snapshot} />
-            <Heatmap snapshot={snapshot} />
+
+          <section className="source-strip" aria-label="Detected local sources">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <Layers3 className="size-3.5" />
+              Live inputs
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {snapshot.detected.length === 0 ? (
+                <Badge variant="neutral">No sources found</Badge>
+              ) : (
+                snapshot.detected.map((source) => (
+                  <Badge key={source} variant="neutral" className="source-badge">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: SOURCE_COLORS[source] }} />
+                    {SOURCE_LABELS[source]}
+                  </Badge>
+                ))
+              )}
+            </div>
+            <div className="ml-auto hidden text-xs text-muted-foreground md:block">
+              {snapshot.totalEventCount.toLocaleString()} events indexed
+            </div>
           </section>
-          <DailyTable snapshot={snapshot} />
-        </>
-      )}
-    </main>
+
+          <section className="content-grid grid sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard icon={<CalendarDays />} label="Active days" value={formatNumber(snapshot.totals.activeDays)} detail="Days with recorded usage" />
+            <MetricCard icon={<Gauge />} label="Daily burn" value={formatUsd(averageCost)} detail="Average per active day" />
+            <MetricCard icon={<Activity />} label="Requests" value={formatNumber(snapshot.totals.eventCount)} detail="Model events in this window" />
+            <MetricCard icon={<Coins />} label="Tracked tools" value={formatNumber(snapshot.detected.length)} detail="Local sources reporting" />
+          </section>
+
+          {snapshot.totals.eventCount === 0 ? (
+            <EmptyState errors={snapshot.errors} />
+          ) : (
+            <>
+              <DailyStackedBars snapshot={snapshot} />
+              <section className="content-grid grid lg:grid-cols-[0.82fr_1.18fr]">
+                <SourceDonut snapshot={snapshot} />
+                <TopModels snapshot={snapshot} />
+              </section>
+              <Heatmap snapshot={snapshot} />
+              <DailyTable snapshot={snapshot} />
+            </>
+          )}
+
+          <footer className="flex flex-col gap-2 border-t border-border px-1 pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>All analysis stays on this machine.</span>
+            <span>Last indexed at {latestGenerated}</span>
+          </footer>
+        </main>
+      </div>
+    </Glass>
   )
 }
 
-function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function MetricCard({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  detail: string
+}) {
   return (
-    <Card className="metric-card overflow-hidden p-5">
+    <Card className="metric-card group overflow-hidden p-[var(--card-padding)]" data-glass-target>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-heading text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            {label}
-          </div>
-          <div className="mt-3 break-words font-heading text-2xl font-bold leading-none tracking-tight">{value}</div>
-        </div>
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-white/5 text-main">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-white/[0.025] text-muted-foreground transition-colors group-hover:border-main/30 group-hover:text-main">
           {icon}
         </div>
+        <span className="font-heading text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
       </div>
+      <div className="mt-8 break-words font-heading text-3xl font-medium leading-none tracking-[-0.05em]">{value}</div>
+      <div className="mt-2 text-xs text-muted-foreground">{detail}</div>
     </Card>
   )
 }
 
 function EmptyState({ errors }: { errors: DashboardSnapshot['errors'] }) {
   return (
-    <Card className="p-6">
-      <h2 className="font-heading text-2xl font-bold">No usage data found</h2>
-      <p className="mt-2 max-w-3xl text-muted-foreground">
+    <Card className="overflow-hidden p-6 sm:p-10">
+      <div className="mb-8 flex size-14 items-center justify-center rounded-full border border-main/25 bg-main/10 text-main">
+        <ScanLine className="size-6" />
+      </div>
+      <div className="eyebrow">Awaiting signal</div>
+      <h2 className="mt-4 font-heading text-3xl font-medium tracking-[-0.05em]">No usage data found</h2>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
         token-calc scans the same local locations as the reference project. Use at least one supported AI coding tool,
         then refresh this dashboard.
       </p>
@@ -383,7 +517,9 @@ function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daily Cost Timeline</CardTitle>
+        <div className="eyebrow">01 / Velocity</div>
+        <CardTitle className="mt-2 text-2xl sm:text-3xl">Daily spend</CardTitle>
+        <CardDescription>Estimated cost per day, segmented by local coding tool.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-72 overflow-x-auto px-1 pb-2 sm:px-2">
@@ -401,7 +537,7 @@ function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
                 <div key={day.date} className="flex min-w-0 flex-col items-center gap-2">
                   <div
                     className={cn(
-                      'flex h-56 w-full min-w-0 items-end overflow-hidden rounded-t-sm bg-background',
+                      'flex h-56 w-full min-w-0 items-end overflow-hidden rounded-t-md bg-background',
                       day.isFuture && 'bg-secondary-background opacity-70',
                     )}
                     title={`${day.date}: ${formatNumber(totalTokens(day.tokens))} tokens, ${formatUsd(day.costUSD)}`}
@@ -429,7 +565,7 @@ function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
                       </div>
                     ) : null}
                   </div>
-                  <div className="h-7 w-max whitespace-nowrap text-center text-[10px] font-black leading-none">
+                  <div className="h-7 w-max whitespace-nowrap text-center text-[9px] font-semibold leading-none text-muted-foreground">
                     {shouldLabel ? day.date.slice(5) : ''}
                   </div>
                 </div>
@@ -452,7 +588,9 @@ function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cost Breakdown</CardTitle>
+        <div className="eyebrow">02 / Distribution</div>
+        <CardTitle className="mt-2 text-2xl">Tool mix</CardTitle>
+        <CardDescription>Where estimated spend is originating.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row">
@@ -525,7 +663,11 @@ function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <CardTitle>Top Models</CardTitle>
+        <div>
+          <div className="eyebrow">03 / Models</div>
+          <CardTitle className="mt-2 text-2xl">Model leaderboard</CardTitle>
+          <CardDescription className="mt-1">Ranked by cost or total token volume.</CardDescription>
+        </div>
         <TabsList>
           <TabsTrigger active={activeTab === 'cost'} onClick={() => setActiveTab('cost')}>
             Cost
@@ -547,7 +689,7 @@ function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-background">
                   <div
-                    className="h-full rounded-full bg-main"
+                    className="h-full rounded-full bg-gradient-to-r from-[#8b5cf6] to-main"
                     style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }}
                   />
                 </div>
@@ -605,71 +747,101 @@ function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function MonthlyTrend({ snapshot }: { snapshot: DashboardSnapshot }) {
-  const months = snapshot.monthly.slice(-12)
-  const width = 640
-  const height = 240
-  const padding = 28
-  const maxCost = maxOf(months.map((month) => month.costUSD))
-  const points = months.map((month, index) => {
-    const x = padding + (index / Math.max(1, months.length - 1)) * (width - padding * 2)
-    const y = height - padding - (month.costUSD / maxCost) * (height - padding * 2)
-    return { x, y, month }
-  })
-  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Monthly Trend</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          className="h-64 w-full rounded-xl border border-border bg-background/60"
-        >
-          <path d={path} fill="none" stroke="rgba(124, 243, 181, 0.14)" strokeWidth="12" strokeLinejoin="round" />
-          <path d={path} fill="none" stroke="var(--main)" strokeWidth="4" strokeLinejoin="round" />
-          {points.map((point) => (
-            <g key={point.month.month}>
-              <circle cx={point.x} cy={point.y} r="6" fill="var(--background)" stroke="var(--main)" strokeWidth="3" />
-              <title>{`${point.month.month}: ${formatUsd(point.month.costUSD)}`}</title>
-            </g>
-          ))}
-        </svg>
-      </CardContent>
-    </Card>
-  )
-}
-
 function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
+  const [hovered, setHovered] = React.useState<HeatmapDay | null>(null)
   const cells = buildYearHeatmap(snapshot)
   const maxCost = maxOf(cells.map((cell) => cell.costUSD))
   const year = new Date(snapshot.generated).getUTCFullYear()
+  const weeks = Math.ceil(cells.length / 7)
+  const monthLabels = cells.flatMap((cell, index) => {
+    const date = parseDateKey(cell.date)
+    if (!cell.inYear || date.getUTCDate() !== 1) return []
+    return [{ label: date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }), week: Math.floor(index / 7) }]
+  })
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{year} Activity Heatmap</CardTitle>
+      <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="eyebrow">04 / Year in focus</div>
+          <CardTitle className="mt-2 text-2xl">{year} activity</CardTitle>
+          <CardDescription className="mt-1">A day-by-day view of token activity and estimated spend.</CardDescription>
+        </div>
+        <div className="min-h-[68px] min-w-60 rounded-xl border border-border bg-black/15 px-4 py-3 md:text-right">
+          {hovered ? (
+            <>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                {parseDateKey(hovered.date).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  timeZone: 'UTC',
+                })}
+              </div>
+              <div className="mt-2 font-heading text-sm font-medium">
+                {formatCompactTokens(hovered.totalTokens)} tokens <span className="text-muted-foreground">/</span>{' '}
+                {formatUsd(hovered.costUSD)}
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center text-xs leading-5 text-muted-foreground md:justify-end">
+              Hover a date to inspect its usage.
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-flow-col grid-rows-7 justify-start gap-1 overflow-x-auto pb-2">
-          {cells.map((cell) => {
-            const level = Math.ceil((cell.costUSD / maxCost) * 4)
-            const colors = ['#111722', '#163326', '#21583b', '#3a9a67', '#7cf3b5']
-            return (
+        <div className="overflow-x-auto pb-2">
+          <div className="min-w-[64rem]">
+            <div
+              className="mb-2 ml-9 grid gap-[3px] text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+              style={{ gridTemplateColumns: `repeat(${weeks}, 1rem)` }}
+            >
+              {monthLabels.map((month) => (
+                <span key={`${month.label}:${month.week}`} style={{ gridColumn: month.week + 1 }}>
+                  {month.label}
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <div className="grid w-7 shrink-0 grid-rows-7 gap-[3px] text-[9px] font-medium text-muted-foreground">
+                {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((label, index) => (
+                  <span key={index} className="flex h-4 items-center">
+                    {label}
+                  </span>
+                ))}
+              </div>
               <div
-                key={cell.date}
-                className={cn(
-                  'size-5 rounded-[5px] border border-border',
-                  !cell.inYear && 'invisible',
-                  cell.isFuture && 'bg-secondary-background opacity-70',
-                )}
-                style={{ backgroundColor: colors[level] }}
-                title={`${cell.date}: ${formatNumber(cell.totalTokens)} tokens, ${formatUsd(cell.costUSD)}`}
-              />
-            )
-          })}
+                className="grid grid-flow-col grid-rows-7 justify-start gap-[3px]"
+                onMouseLeave={() => setHovered(null)}
+              >
+                {cells.map((cell) => {
+                  const level = Math.ceil((cell.costUSD / maxCost) * 4)
+                  const colors = ['#17181d', '#303720', '#596b25', '#91b83d', '#d9ff63']
+                  return (
+                    <div
+                      key={cell.date}
+                      className={cn(
+                        'size-4 rounded-[4px] border border-border transition-transform duration-150 hover:scale-125 hover:border-white/40',
+                        !cell.inYear && 'invisible',
+                        cell.isFuture && 'bg-secondary-background opacity-70',
+                      )}
+                      style={{ backgroundColor: colors[level] }}
+                      title={`${cell.date}: ${formatNumber(cell.totalTokens)} tokens, ${formatUsd(cell.costUSD)}`}
+                      onMouseEnter={() => setHovered(cell)}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <span>Less</span>
+              {['#17181d', '#303720', '#596b25', '#91b83d', '#d9ff63'].map((color) => (
+                <span key={color} className="size-3 rounded-[3px] border border-border" style={{ backgroundColor: color }} />
+              ))}
+              <span>More</span>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -712,7 +884,9 @@ function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daily Details</CardTitle>
+        <div className="eyebrow">05 / Ledger</div>
+        <CardTitle className="mt-2 text-2xl">Daily details</CardTitle>
+        <CardDescription>Select a row to inspect tool and model usage.</CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
