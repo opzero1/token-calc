@@ -160,8 +160,43 @@ describe('loadOpenCodeEvents', () => {
         cost: 0.4,
       }),
     )
-    insertV2.run('malformed', 'session-v2', 'assistant', 4, 1_700_000_000_500, '{')
+    insertV2.run(
+      'cross-db',
+      'session-cross-db',
+      'assistant',
+      4,
+      1_700_000_000_350,
+      JSON.stringify({
+        model: { providerID: 'openai', id: 'cross-db-v2' },
+        tokens: { input: 35, output: 7, reasoning: 1, cache: { read: 3, write: 0 } },
+        cost: 0.35,
+      }),
+    )
+    insertV2.run('malformed', 'session-v2', 'assistant', 5, 1_700_000_000_500, '{')
     db.close()
+
+    const defaultDb = new DatabaseSync(path.join(dataDir, 'opencode.db'))
+    defaultDb.exec(`
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      )
+    `)
+    defaultDb.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run(
+      'cross-db',
+      'session-cross-db',
+      1_700_000_000_350,
+      JSON.stringify({
+        role: 'assistant',
+        providerID: 'openai',
+        modelID: 'cross-db-legacy',
+        tokens: { input: 30, output: 6, reasoning: 0, cache: { read: 0, write: 0 } },
+        cost: 0.3,
+      }),
+    )
+    defaultDb.close()
 
     const events = await loadOpenCodeEvents()
 
@@ -174,6 +209,7 @@ describe('loadOpenCodeEvents', () => {
         costUSD: 0.25,
       }),
       expect.objectContaining({ sessionId: 'session-shadowed', model: 'claude-legacy' }),
+      expect.objectContaining({ sessionId: 'session-cross-db', model: 'cross-db-v2' }),
       expect.objectContaining({ sessionId: 'session-v2', model: 'claude-v2' }),
     ])
   })
@@ -182,6 +218,31 @@ describe('loadOpenCodeEvents', () => {
     dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
     process.env.OPENCODE_DATA_DIR = dataDir
     process.env.OPENCODE_DB = 'custom.sqlite'
+
+    const decoyDb = new DatabaseSync(path.join(dataDir, 'opencode.db'))
+    decoyDb.exec(`
+      CREATE TABLE session_message (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        time_created INTEGER NOT NULL,
+        data TEXT NOT NULL
+      )
+    `)
+    decoyDb.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
+      'decoy',
+      'session-decoy',
+      'assistant',
+      1,
+      1_700_000_000_000,
+      JSON.stringify({
+        model: { providerID: 'openai', id: 'decoy-model' },
+        tokens: { input: 99, output: 9, reasoning: 0, cache: { read: 0, write: 0 } },
+        cost: 0.99,
+      }),
+    )
+    decoyDb.close()
 
     const db = new DatabaseSync(path.join(dataDir, 'custom.sqlite'))
     db.exec(`
