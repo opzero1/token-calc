@@ -28,6 +28,12 @@ const FALLBACK_PRICES: Record<string, ModelPricing> = {
 		output_cost_per_token: 8e-6,
 		cache_read_input_token_cost: 0.5e-6,
 	},
+	'gpt-6-astra': {
+		input_cost_per_token: 10e-6,
+		output_cost_per_token: 50e-6,
+		cache_read_input_token_cost: 1e-6,
+		cache_creation_input_token_cost: 12.5e-6,
+	},
 };
 
 let pricingCache: Record<string, ModelPricing> | null = null;
@@ -75,7 +81,9 @@ function findModelPricing(
 
 export async function calculateCost(model: string, tokens: TokenCounts): Promise<number> {
 	const prices = await fetchPricing();
-	const pricing = findModelPricing(prices, model);
+	const isAstraFast =
+		model.replace(/^\[pi\]\s*/, '').replace(/^(?:openrouter\/)?openai\//, '') === 'gpt-6-astra-fast';
+	const pricing = findModelPricing(prices, isAstraFast ? 'gpt-6-astra' : model);
 	if (!pricing) return 0;
 
 	const inputCost = tokens.input * (pricing.input_cost_per_token ?? 0);
@@ -87,7 +95,7 @@ export async function calculateCost(model: string, tokens: TokenCounts): Promise
 		tokens.cacheRead *
 		(pricing.cache_read_input_token_cost ?? pricing.input_cost_per_token ?? 0);
 
-	return inputCost + outputCost + cacheCreateCost + cacheReadCost;
+	return (inputCost + outputCost + cacheCreateCost + cacheReadCost) * (isAstraFast ? 2 : 1);
 }
 
 export async function enrichCosts(
