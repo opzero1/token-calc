@@ -9,9 +9,12 @@ export * from './types.js'
 
 export type TimeRange = '7' | '30' | '90' | '180' | '365' | 'all'
 
-export interface DashboardSnapshot extends DashboardData {
+export interface UsageSnapshot extends DashboardData {
   detected: LoadAllResult['detected']
   errors: LoadAllResult['errors']
+}
+
+export interface DashboardSnapshot extends UsageSnapshot {
   totalEventCount: number
   range: TimeRange
 }
@@ -65,6 +68,14 @@ export async function loadDashboardSnapshot(range: TimeRange = '90'): Promise<Da
     snapshotCache.delete(range)
     throw error
   }
+}
+
+export async function loadDailySnapshot(date: string): Promise<UsageSnapshot> {
+  const { events, detected, errors } = await loadAll(true)
+  const dailyEvents = events.filter((event) => new Date(event.timestamp).toISOString().slice(0, 10) === date)
+  await enrichCosts(dailyEvents)
+
+  return { ...buildDashboardData(dailyEvents), detected, errors }
 }
 
 async function loadFreshDashboardSnapshot(range: TimeRange): Promise<DashboardSnapshot> {

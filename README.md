@@ -39,6 +39,14 @@ pnpm --filter @token-calc/cli dev -- --range 30
 
 Supported ranges are `7`, `30`, `90`, `180`, `365`, and `all`.
 
+To see the cost, token, model, and source breakdown for one day:
+
+```bash
+pnpm --filter @token-calc/cli dev -- --date 2026-09-08
+```
+
+Dates use `YYYY-MM-DD` and cover midnight to midnight UTC, matching the dashboard's daily totals. The date view includes every model used that day. Use either `--date` or `--range`.
+
 Press `q` or `Ctrl+C` to exit.
 
 ## Supported Sources
