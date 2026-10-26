@@ -2,13 +2,16 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildDashboardData } from '../aggregator.js'
 
 import { loadOpenCodeEvents } from './opencode.js'
 
 let dataDir: string | undefined
 
 afterEach(async () => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   delete process.env.OPENCODE_DATA_DIR
   delete process.env.OPENCODE_DB
   if (dataDir) await rm(dataDir, { recursive: true, force: true })
@@ -16,6 +19,99 @@ afterEach(async () => {
 })
 
 describe('loadOpenCodeEvents', () => {
+  it.each(['session', 'session_v2'])('attributes dots, workers, observers and child sessions from %s without adding usage', async (table) => {
+    dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
+    process.env.OPENCODE_DATA_DIR = dataDir
+    vi.stubEnv('OPEN_DOT_HOME', path.join(dataDir, 'dots-home'))
+    const home = process.env.OPEN_DOT_HOME!
+    const db = new DatabaseSync(path.join(dataDir, 'opencode.db'))
+    db.exec(`
+      CREATE TABLE ${table} (id TEXT PRIMARY KEY, title TEXT, directory TEXT, parent_id TEXT, metadata TEXT);
+      CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
+    `)
+    const sessions = [
+      ['dot', 'Dot: jojo', path.join(home, 'dots/jojo'), null, null],
+      ['worker', 'jojo worker #1: task', '/project', null, null],
+      ['observer', 'open-dot observer for jojo, job 1', path.join(home, 'observer/jojo'), null, null],
+      ['child', 'Threads worker', '/project', null, JSON.stringify({ opThreads: { coordinatorID: 'worker' } })],
+      ['unrelated', 'Regular session', '/project', null, null],
+    ]
+    for (const session of sessions) {
+      db.prepare(`INSERT INTO ${table} VALUES (?, ?, ?, ?, ?)`).run(...session)
+      db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
+        session[0], session[0], 'assistant', 1_700_000_000_000, 1,
+        JSON.stringify({ model: { providerID: 'openai', id: 'gpt-6.1-sol' }, cost: 1,
+          tokens: { input: 100, output: 10, reasoning: 2, cache: { read: 20, write: 0 } } }),
+      )
+    }
+    db.close()
+    const events = await loadOpenCodeEvents()
+    expect(events).toHaveLength(5)
+    expect(events.find((event) => event.sessionId === 'dot')).toMatchObject({ openDot: { name: 'jojo', role: 'conversation' } })
+    expect(events.find((event) => event.sessionId === 'worker')).toMatchObject({ openDot: { name: 'jojo', role: 'worker' } })
+    expect(events.find((event) => event.sessionId === 'child')).toMatchObject({ openDot: { name: 'jojo', role: 'worker' } })
+    expect(events.find((event) => event.sessionId === 'observer')).toMatchObject({ openDot: { name: 'jojo', role: 'observer' } })
+    expect(events.find((event) => event.sessionId === 'unrelated')?.openDot).toBeUndefined()
+    const dashboard = buildDashboardData(events)
+    expect(dashboard.totals.costUSD).toBe(5)
+    expect(dashboard.bySource).toHaveLength(1)
+    expect(dashboard.byOpenDot).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'jojo', role: 'conversation', costUSD: 1, eventCount: 1 }),
+      expect.objectContaining({ name: 'jojo', role: 'worker', costUSD: 2, eventCount: 2 }),
+      expect.objectContaining({ name: 'jojo', role: 'observer', costUSD: 1, eventCount: 1 }),
+    ]))
+    expect(dashboard.byOpenDot.reduce((sum, dot) => sum + dot.costUSD, 0)).toBe(4)
+  })
+
+  it('reuses unchanged sessions and reloads only changed sessions, with periodic full reconciliation', async () => {
+    dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
+    process.env.OPENCODE_DATA_DIR = dataDir
+    const db = new DatabaseSync(path.join(dataDir, 'opencode.db'))
+    db.exec(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY, time_updated INTEGER, cost REAL);
+      CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)`)
+    const message = (input: number) => JSON.stringify({ model: { providerID: 'openai', id: 'model' },
+      tokens: { input, output: 0, cache: { read: 0, write: 0 } } })
+    db.prepare('INSERT INTO session_v2 VALUES (?, ?, ?)').run('s', 1, 0)
+    db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?)').run('m', 's', 'assistant', 1_700_000_000_000, message(10))
+    expect((await loadOpenCodeEvents())[0].tokens.input).toBe(10)
+    const queries = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    db.prepare('UPDATE session_message SET data = ? WHERE id = ?').run(message(20), 'm')
+    db.prepare('UPDATE session_v2 SET cost = ? WHERE id = ?').run(1, 's')
+    expect((await loadOpenCodeEvents())[0].tokens.input).toBe(20)
+    expect(queries.mock.calls.filter(([sql]) => sql.includes('FROM session_message')).map(([sql]) => sql)).toEqual([
+      expect.stringContaining('AND session_id = ?'),
+    ])
+    // Out-of-band edits without OpenCode's session revisions are caught by reconciliation.
+    db.prepare('UPDATE session_message SET data = ? WHERE id = ?').run(message(30), 'm')
+    const now = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(now + 5 * 60_000 + 1)
+    expect((await loadOpenCodeEvents())[0].tokens.input).toBe(30)
+    db.close()
+    vi.restoreAllMocks()
+  })
+
+  it('refreshes updated, deleted and backfilled messages and isolates cached events', async () => {
+    dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
+    process.env.OPENCODE_DATA_DIR = dataDir
+    const db = new DatabaseSync(path.join(dataDir, 'opencode.db'))
+    db.exec(`CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)`)
+    const insert = db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)')
+    const message = (input: number) => JSON.stringify({ model: { providerID: 'openai', id: 'gpt-6.1-sol' },
+      tokens: { input, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, cost: 1 })
+    insert.run('first', 'session', 'assistant', 1_700_000_000_000, 1, message(100))
+    const first = await loadOpenCodeEvents()
+    first[0].tokens.input = 999
+    first[0].costUSD = 999
+    expect((await loadOpenCodeEvents())[0]).toMatchObject({ tokens: { input: 100 }, costUSD: 1 })
+    db.prepare('UPDATE session_message SET data = ?, time_updated = 2 WHERE id = ?').run(message(200), 'first')
+    expect((await loadOpenCodeEvents())[0].tokens.input).toBe(200)
+    insert.run('backfill', 'session', 'assistant', 1_600_000_000_000, 1, message(50))
+    expect(await loadOpenCodeEvents()).toHaveLength(2)
+    db.prepare('DELETE FROM session_message WHERE id = ?').run('first')
+    expect((await loadOpenCodeEvents()).map((event) => event.tokens.input)).toEqual([50])
+    db.close()
+  })
+
   it('loads token-bearing assistant messages without treating user messages as usage', async () => {
     dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
     process.env.OPENCODE_DATA_DIR = dataDir

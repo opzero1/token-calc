@@ -19,6 +19,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Astra Fast pricing', () => {
+  it('shares a cold pricing fetch across concurrent callers', async () => {
+    const { calculateCost, enrichCosts } = await import('./pricing.js')
+    await Promise.all([calculateCost('gpt-6-astra', emptyTokens()), enrichCosts([])])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it('prices separately counted reasoning tokens at the output rate', async () => {
+    const { calculateCost } = await import('./pricing.js')
+    expect(await calculateCost('gpt-6-astra', { ...emptyTokens(), output: 800_000, reasoning: 200_000 })).toBeCloseTo(50)
+  })
   it.each([
     ['input', 20],
     ['output', 100],
@@ -50,7 +59,7 @@ describe('Astra Fast pricing', () => {
     const estimated = { model: 'gpt-6-astra-fast', tokens, costUSD: 0 }
     const recorded = { model: 'gpt-6-astra-fast', tokens, costUSD: 123 }
     await enrichCosts([estimated, recorded])
-    expect(estimated.costUSD).toBeCloseTo(2000.82424)
+    expect(estimated.costUSD).toBeCloseTo(2079.36394)
     expect(recorded.costUSD).toBe(123)
   })
 })

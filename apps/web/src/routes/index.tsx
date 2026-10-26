@@ -26,14 +26,17 @@ function Home() {
   const [range, setRange] = React.useState<TimeRange>('90')
   const [snapshot, setSnapshot] = React.useState<DashboardSnapshot | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(true)
+  const refreshId = React.useRef(0)
 
   const refresh = React.useCallback(
     async (nextRange: TimeRange = range) => {
+      const id = ++refreshId.current
       setIsRefreshing(true)
       try {
-        setSnapshot(await getDashboardSnapshot({ data: nextRange }))
+        const next = await getDashboardSnapshot({ data: nextRange })
+        if (id === refreshId.current) setSnapshot(next)
       } finally {
-        setIsRefreshing(false)
+        if (id === refreshId.current) setIsRefreshing(false)
       }
     },
     [range],
@@ -42,9 +45,8 @@ function Home() {
   const handleRangeChange = React.useCallback(
     (nextRange: TimeRange) => {
       setRange(nextRange)
-      void refresh(nextRange)
     },
-    [refresh],
+    [],
   )
 
   React.useEffect(() => {

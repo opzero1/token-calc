@@ -2,11 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { loadDailySnapshot, loadDashboardSnapshot } from './index.js'
+import { loadDailySnapshot, loadDashboardSnapshot, loadSinceSnapshot, totalTokenCount } from './index.js'
 
 let fixtureDir: string | undefined
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   if (fixtureDir) await rm(fixtureDir, { recursive: true, force: true })
@@ -86,4 +87,22 @@ it('loads a UTC day across sources, excludes neighboring days, and keeps every b
   const all = await loadDashboardSnapshot('all')
   expect(all.totals.costUSD).toBe(406)
   expect(all.totals.eventCount).toBe(7)
+
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2024-03-01T00:00:00.000Z'))
+  const since = await loadSinceSnapshot('2024-02-29')
+  expect(since.totals).toMatchObject({ costUSD: 206, totalTokens: 799, eventCount: 5, activeDays: 2 })
+  expect(since.daily.map((day) => day.date)).toEqual(['2024-02-29', '2024-03-01'])
+  for (const rows of [since.daily, since.byModel, since.bySource]) {
+    expect(rows.reduce((sum, row) => sum + totalTokenCount(row.tokens), 0)).toBe(since.totals.totalTokens)
+    expect(rows.reduce((sum, row) => sum + row.eventCount, 0)).toBe(since.totals.eventCount)
+    expect(rows.reduce((sum, row) => sum + row.costUSD, 0)).toBe(since.totals.costUSD)
+  }
+
+  const later = await loadSinceSnapshot('2024-03-01')
+  expect(later.totals).toMatchObject({ costUSD: 200, totalTokens: 230, eventCount: 2, activeDays: 1 })
+
+  vi.mocked(Date.now).mockReturnValue(Date.parse('2024-02-29T12:00:00.000Z'))
+  const throughNow = await loadSinceSnapshot('2024-02-29')
+  expect(throughNow.totals).toMatchObject({ costUSD: 4, eventCount: 2 })
+  expect(throughNow.byModel.map((model) => model.model)).toEqual(['opencode-model', 'start'])
 })

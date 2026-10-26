@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 import { Box, ScrollBox, Text, createCliRenderer } from '@opentui/core'
-import { loadDailySnapshot, loadDashboardSnapshot, type DashboardData } from '@token-calc/core'
-import { parsePeriod } from './args.js'
+import { loadDailySnapshot, loadDashboardSnapshot, loadSinceSnapshot, type DashboardData } from '@token-calc/core'
+import { parseCliArgs } from './args.js'
 
 const SOURCE_LABELS: Record<string, string> = {
   'claude-code': 'Claude Code',
@@ -30,7 +30,10 @@ function wantsHelp(args: string[]) {
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US', { notation: value >= 1_000_000 ? 'compact' : 'standard' }).format(value)
+  return new Intl.NumberFormat('en-US', {
+    notation: value >= 1_000_000 ? 'compact' : 'standard',
+    maximumFractionDigits: 2,
+  }).format(value)
 }
 
 function formatUsd(value: number, compact = false) {
@@ -63,7 +66,8 @@ function metric(label: string, value: string) {
       borderColor: THEME.border,
       paddingX: 1,
       paddingY: 0,
-      width: '19%',
+      flexBasis: 0,
+      flexGrow: 1,
       minWidth: 18,
       height: 5,
       flexDirection: 'column',
@@ -88,37 +92,46 @@ function modelCostRows(snapshot: DashboardData, limit: number) {
     .join('\n')
 }
 
-function modelTokenRows(snapshot: DashboardData, limit: number) {
+function modelTokenRows(snapshot: DashboardData, limit: number, showCost: boolean) {
   const models = [...snapshot.byModel].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens)).slice(0, limit)
 
   return models
     .map((model, index) => {
       const tokens = model.tokens
       return [
-        `${String(index + 1).padStart(2, ' ')}. ${shortModel(model.model)}  ${formatNumber(totalTokens(tokens))} tokens  ${formatUsd(model.costUSD)}`,
+        `${String(index + 1).padStart(2, ' ')}. ${shortModel(model.model)}  ${formatNumber(totalTokens(tokens))} tokens${showCost ? `  ${formatUsd(model.costUSD)}` : ''}`,
         `    in ${formatNumber(tokens.input)} | out ${formatNumber(tokens.output)} | cache write ${formatNumber(tokens.cacheCreation)} | cache read ${formatNumber(tokens.cacheRead)} | reasoning ${formatNumber(tokens.reasoning)}`,
       ].join('\n')
     })
     .join('\n')
 }
 
-function sourceRows(snapshot: DashboardData) {
-  const maxCost = Math.max(1, ...snapshot.bySource.map((source) => source.costUSD))
+function sourceRows(snapshot: DashboardData, showCost: boolean) {
+  const value = (source: DashboardData['bySource'][number]) => showCost ? source.costUSD : totalTokens(source.tokens)
+  const sources = [...snapshot.bySource].sort((a, b) => value(b) - value(a))
+  const maxValue = Math.max(1, ...sources.map(value))
 
-  return snapshot.bySource
+  return sources
     .map((source) => {
       const label = (SOURCE_LABELS[source.source] ?? source.source).padEnd(16, ' ')
-      return `${label} ${formatUsd(source.costUSD).padStart(12, ' ')}  ${bar(source.costUSD, maxCost, 24)}  ${formatNumber(totalTokens(source.tokens))} tokens`
+      return `${label}${showCost ? ` ${formatUsd(source.costUSD).padStart(12, ' ')}` : ''}  ${bar(value(source), maxValue, 24)}  ${formatNumber(totalTokens(source.tokens))} tokens`
     })
     .join('\n')
 }
 
-function recentDailyRows(snapshot: DashboardData) {
+function dailyRows(snapshot: DashboardData, limit: number, showCost: boolean) {
   return snapshot.daily
-    .slice(-10)
+    .slice(-limit)
     .reverse()
-    .map((day) => `${day.date}  ${formatUsd(day.costUSD).padStart(12, ' ')}  ${formatNumber(totalTokens(day.tokens)).padStart(10, ' ')} tokens  ${day.models.map(shortModel).slice(0, 3).join(', ')}`)
+    .map((day) => `${day.date}${showCost ? `  ${formatUsd(day.costUSD).padStart(12, ' ')}` : ''}  ${formatNumber(totalTokens(day.tokens)).padStart(10, ' ')} tokens  ${day.models.map(shortModel).slice(0, 3).join(', ')}`)
     .join('\n')
+}
+
+function openDotRows(snapshot: DashboardData, showCost: boolean) {
+  const rows = [...snapshot.byOpenDot].sort((a, b) => showCost ? b.costUSD - a.costUSD : totalTokens(b.tokens) - totalTokens(a.tokens))
+  return rows.map((dot) =>
+    `${dot.name} / ${dot.role}  ${formatNumber(dot.eventCount)} requests  ${formatNumber(totalTokens(dot.tokens))} tokens${showCost ? `  ${formatUsd(dot.costUSD)}` : ''}`,
+  ).join('\n')
 }
 
 function helpText() {
@@ -128,10 +141,14 @@ function helpText() {
     'Usage:',
     '  pnpm --filter @token-calc/cli dev -- --range 30',
     '  pnpm --filter @token-calc/cli dev -- --date 2026-09-08',
+    '  pnpm --filter @token-calc/cli dev -- --since 2026-09-01',
+    '  bun apps/cli/src/index.ts --since 2026-09-01 --no-cost',
     '  bun apps/cli/src/index.ts --range all',
     '',
     'Ranges: 7, 30, 90, 180, 365, all',
-    'Date: YYYY-MM-DD, midnight to midnight UTC. Use either --date or --range.',
+    'Date: YYYY-MM-DD, midnight to midnight UTC.',
+    'Since: YYYY-MM-DD, midnight UTC through now. Use one of --date, --since, or --range.',
+    'No cost: --no-cost hides cost throughout the TUI and ranks sources by tokens.',
     '',
     'OpenTUI currently runs through Bun. Press q or Ctrl+C to exit.',
   ].join('\n')
@@ -144,13 +161,31 @@ async function main() {
     return
   }
 
-  const period = parsePeriod(args)
-  const snapshot = await (period.kind === 'date' ? loadDailySnapshot(period.date) : loadDashboardSnapshot(period.range))
-  const periodLabel = period.kind === 'date' ? `Date ${period.date} (UTC)` : `Range ${period.range.toUpperCase()}`
+  const { period, showCost } = parseCliArgs(args)
+  const snapshot = await (period.kind === 'date'
+    ? loadDailySnapshot(period.date)
+    : period.kind === 'since'
+      ? loadSinceSnapshot(period.date)
+      : loadDashboardSnapshot(period.range))
+  const periodLabel = period.kind === 'date'
+    ? `Date ${period.date} (UTC)`
+    : period.kind === 'since'
+      ? `Since ${period.date} through now (UTC)`
+      : `Range ${period.range.toUpperCase()}`
   const modelLimit = period.kind === 'date' ? snapshot.byModel.length : 8
   const modelsLabel = period.kind === 'date' ? 'Models' : 'Top Models'
   const generated = new Date(snapshot.generated).toLocaleString()
   const averageCost = snapshot.totals.activeDays > 0 ? snapshot.totals.costUSD / snapshot.totals.activeDays : 0
+  const averageTokens = snapshot.totals.activeDays > 0 ? snapshot.totals.totalTokens / snapshot.totals.activeDays : 0
+  const metrics = [
+    ...(showCost ? [metric('Total Cost', formatUsd(snapshot.totals.costUSD))] : []),
+    metric('Total Tokens', formatNumber(snapshot.totals.totalTokens)),
+    metric('Active Days', formatNumber(snapshot.totals.activeDays)),
+    showCost
+      ? metric('Cost / Active Day', formatUsd(averageCost))
+      : metric('Tokens / Active Day', formatNumber(averageTokens)),
+    metric('Events', formatNumber(snapshot.totals.eventCount)),
+  ]
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
@@ -189,6 +224,7 @@ async function main() {
         },
         Text({ content: 'token-calc', fg: THEME.header }),
         Text({ content: `${periodLabel} | generated ${generated} | press q or Ctrl+C to exit`, fg: THEME.muted }),
+        Text({ content: 'All totals use this period. Active days = days with usage. Tokens include cache.', fg: THEME.muted }),
       ),
       Box(
         {
@@ -197,11 +233,7 @@ async function main() {
           flexWrap: 'wrap',
           width: '100%',
         },
-        metric('Total Cost', formatUsd(snapshot.totals.costUSD)),
-        metric('Total Tokens', formatNumber(snapshot.totals.totalTokens)),
-        metric('Active Days', formatNumber(snapshot.totals.activeDays)),
-        metric('Cost / Day', formatUsd(averageCost)),
-        metric('Events', formatNumber(snapshot.totals.eventCount)),
+        ...metrics,
       ),
       ScrollBox(
         {
@@ -216,10 +248,17 @@ async function main() {
         snapshot.totals.eventCount === 0
           ? Text({ content: `No usage found for ${periodLabel.toLowerCase()}.\n`, fg: THEME.muted })
           : Text({ content: '', fg: THEME.text }),
-        Text({ content: `${modelsLabel} by Cost\n${modelCostRows(snapshot, modelLimit)}`, fg: THEME.text }),
-        Text({ content: `\n${modelsLabel} by Token Usage\n${modelTokenRows(snapshot, modelLimit)}`, fg: THEME.text }),
-        Text({ content: `\nSources\n${sourceRows(snapshot)}`, fg: THEME.text }),
-        Text({ content: `\n${period.kind === 'date' ? 'Day Summary' : 'Recent Days'}\n${recentDailyRows(snapshot)}`, fg: THEME.text }),
+        ...(showCost ? [Text({ content: `${modelsLabel} by Cost\n${modelCostRows(snapshot, modelLimit)}\n`, fg: THEME.text })] : []),
+        Text({ content: `${modelsLabel} by Token Usage\n${modelTokenRows(snapshot, modelLimit, showCost)}`, fg: THEME.text }),
+        Text({ content: `\nSources\n${sourceRows(snapshot, showCost)}`, fg: THEME.text }),
+        ...(snapshot.byOpenDot.length > 0 ? [Text({
+          content: `\nopen-dot usage (included in OpenCode totals)\n${openDotRows(snapshot, showCost)}`,
+          fg: THEME.text,
+        })] : []),
+        Text({
+          content: `\n${period.kind === 'date' ? 'Day Summary' : period.kind === 'since' ? 'Days in Period' : 'Recent Days'}\n${dailyRows(snapshot, period.kind === 'range' ? 10 : snapshot.daily.length, showCost)}`,
+          fg: THEME.text,
+        }),
         snapshot.errors.length > 0
           ? Text({
               content: `\nLoader Errors\n${snapshot.errors.map((error) => `${SOURCE_LABELS[error.source] ?? error.source}: ${error.error}`).join('\n')}`,

@@ -9,6 +9,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "vp lint",
     "test": "vp test run",
+    "bench:ingest": "bun scripts/benchmark-ingestion.ts",
     "start": "pnpm --filter @token-calc/web dev"
   },
   "devDependencies": {

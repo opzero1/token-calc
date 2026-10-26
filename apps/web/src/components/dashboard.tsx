@@ -445,6 +445,7 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
                 <TopModels snapshot={snapshot} />
               </section>
               <Heatmap snapshot={snapshot} />
+              {snapshot.byOpenDot.length > 0 && <OpenDotTable snapshot={snapshot} />}
               <DailyTable snapshot={snapshot} />
             </>
           )}
@@ -849,6 +850,41 @@ function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
 }
 
 type SortKey = 'date' | 'cost' | 'tokens' | 'events'
+
+function OpenDotTable({ snapshot }: { snapshot: DashboardSnapshot }) {
+  return (
+    <Card data-glass-target>
+      <CardHeader>
+        <CardTitle>open-dot usage</CardTitle>
+        <CardDescription>Attributed OpenCode usage by dot and role. Already included in the totals above.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Dot</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead className="text-right">Requests</TableHead>
+              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Cost</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {snapshot.byOpenDot.map((dot) => (
+              <TableRow key={JSON.stringify([dot.name, dot.role])}>
+                <TableCell className="font-bold">{dot.name}</TableCell>
+                <TableCell>{dot.role}</TableCell>
+                <TableCell className="text-right">{formatNumber(dot.eventCount)}</TableCell>
+                <TableCell className="text-right">{formatNumber(totalTokens(dot.tokens))}</TableCell>
+                <TableCell className="text-right">{formatUsd(dot.costUSD)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
 
 function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
   const [sortKey, setSortKey] = React.useState<SortKey>('date')

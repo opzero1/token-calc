@@ -6,6 +6,8 @@ It reads usage data already stored on your machine by tools like Claude Code, Co
 
 Nothing needs to be uploaded anywhere. The web app and CLI both run locally.
 
+Use Node.js 24 or newer for the web app and a current Bun release for the CLI. Codex compressed histories need the runtime's built-in Zstandard support.
+
 ## How It Works
 
 1. token-calc scans the usual local data folders for supported AI coding tools.
@@ -15,6 +17,30 @@ Nothing needs to be uploaded anywhere. The web app and CLI both run locally.
 5. The result is shown in either the browser dashboard or the terminal UI.
 
 The numbers are meant for visibility and budgeting, not billing reconciliation. If a tool already records cost, token-calc uses that value. Otherwise it estimates cost from model pricing.
+
+Codex ingestion covers active and archived `.jsonl` and `.jsonl.zst` histories. Plain files take precedence over compressed siblings, and copied sessions count once. Cached input and reasoning output are separated from input and output so token totals don't count them twice. Separately counted reasoning uses the output price when estimating cost.
+
+## open-dot attribution
+
+The web dashboard and CLI show usage by dot and role: conversation, worker, or observer. This usage is already included under OpenCode, not added as another source.
+
+Attribution uses OpenCode session directories, known dot worker titles, and parent or Threads coordinator relationships. It does not read open-dot's database or call its API. Renamed or moved sessions can lose attribution; sessions a dot only watches are not automatically attributed.
+
+The default home is `~/.opendot`. Set `OPEN_DOT_HOME` if your dots live elsewhere.
+
+## Ingestion performance
+
+The first scan still reads historical data. Later scans in the same process reuse unchanged Codex files and OpenCode sessions. OpenCode refreshes changed sessions from session revision counters and performs a full reconciliation every five minutes to catch edits that bypass those counters. Source databases remain read-only.
+
+Concurrent snapshot requests share ingestion. Dashboard snapshots are cached for ten seconds; expired requests wait for fresh data. Only events in the selected period need cost enrichment. A new CLI process starts with cold caches.
+
+Measure three scans in one process:
+
+```bash
+pnpm bench:ingest
+```
+
+The benchmark reports durations, event counts, and failed source names, without session paths, titles, or message content. It excludes pricing and dashboard aggregation. "Cold" means an empty process cache, not an empty operating-system disk cache.
 
 ## Web Dashboard
 
@@ -45,7 +71,23 @@ To see the cost, token, model, and source breakdown for one day:
 pnpm --filter @token-calc/cli dev -- --date 2026-09-08
 ```
 
-Dates use `YYYY-MM-DD` and cover midnight to midnight UTC, matching the dashboard's daily totals. The date view includes every model used that day. Use either `--date` or `--range`.
+Dates use `YYYY-MM-DD` and cover midnight to midnight UTC, matching the dashboard's daily totals. The date view includes every model used that day.
+
+To see usage from a date through now:
+
+```bash
+pnpm --filter @token-calc/cli dev -- --since 2026-09-01
+```
+
+`--since` starts at midnight UTC on the selected date. Use one of `--date`, `--since`, or `--range`.
+
+To show token usage without costs, add `--no-cost`:
+
+```bash
+pnpm --filter @token-calc/cli dev -- --since 2026-09-01 --no-cost
+```
+
+This hides costs in every section and ranks sources by tokens. Summary cards use the selected period. Active days count only days with recorded usage, and daily averages use that count. Token totals include cache reads and writes.
 
 Press `q` or `Ctrl+C` to exit.
 
@@ -66,6 +108,8 @@ You can point token-calc at custom data locations with these environment variabl
 - `CODEX_HOME`
 - `GEMINI_DIR`
 - `OPENCODE_DATA_DIR`
+- `OPENCODE_DB` (select one OpenCode database instead of all installed channels)
+- `OPEN_DOT_HOME` (attribution only)
 - `AMP_DATA_DIR`
 - `PI_AGENT_DIR`
 
@@ -77,6 +121,7 @@ pnpm build
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm bench:ingest
 pnpm --filter @token-calc/cli dev -- --range all
 ```
 

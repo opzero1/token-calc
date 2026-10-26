@@ -22,6 +22,15 @@ export interface UnifiedTokenEvent {
 	tokens: TokenCounts;
 	costUSD: number;
 	project?: string;
+	openDot?: { name: string; role: 'conversation' | 'worker' | 'observer' };
+}
+
+export interface OpenDotAggregation {
+	name: string;
+	role: NonNullable<UnifiedTokenEvent['openDot']>['role'];
+	tokens: TokenCounts;
+	costUSD: number;
+	eventCount: number;
 }
 
 export interface DailyAggregation {
@@ -126,6 +135,7 @@ export interface DashboardData {
 	byModel: ModelAggregation[];
 	bySourceModel: SourceModelAggregation[];
 	byProject: ProjectAggregation[];
+	byOpenDot: OpenDotAggregation[];
 	heatmap: HeatmapCell[];
 }
 

@@ -1,11 +1,17 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
 import type { UnifiedTokenEvent } from '../types.js';
+import { openDotSessions, type OpenCodeSession } from './open-dot.js';
 
 const DEFAULT_OPEN_CODE_PATH = path.join(homedir(), '.local', 'share', 'opencode');
+
+type TableCache = { revisions: Map<string, string>; records: Map<string, OpenCodeRecord> };
+type DatabaseCache = { identity: string; fingerprint: string; loadedAt: number; tables: Map<string, TableCache>; sessions: OpenCodeSession[] };
+const databaseCache = new Map<string, DatabaseCache>();
+const FULL_RESCAN_MS = 5 * 60_000;
 
 type OpenCodeRecord = {
 	id: string;
@@ -114,18 +120,53 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 	if (dbPath === ':memory:' || !existsSync(dbPath)) return null;
 
 	try {
+		const info = await stat(dbPath, { bigint: true });
+		const identity = `${info.dev}:${info.ino}`;
+		const fingerprint = (await Promise.all([dbPath, `${dbPath}-wal`, `${dbPath}-journal`].map(async (file) => {
+			try {
+				const value = await stat(file, { bigint: true });
+				return `${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}`;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '-';
+				throw error;
+			}
+		}))).join('|');
+		const previous = databaseCache.get(dbPath);
+		const now = Date.now();
+		const fresh = previous?.identity === identity && now >= previous.loadedAt && now - previous.loadedAt < FULL_RESCAN_MS;
+		const attribute = (cached: DatabaseCache) => {
+			const dots = openDotSessions(cached.sessions);
+			return [...cached.tables.values()].flatMap((table) => [...table.records.values()].map((record) => ({
+				...record, event: { ...record.event, tokens: { ...record.event.tokens }, openDot: dots.get(record.event.sessionId) },
+			})));
+		};
+		if (fresh && previous.fingerprint === fingerprint) return attribute(previous);
 		const { DatabaseSync } = await import('node:sqlite');
 		const db = new DatabaseSync(dbPath, { readOnly: true });
 		try {
-			const records: OpenCodeRecord[] = [];
+			db.exec('BEGIN');
+			const tables = new Map<string, TableCache>();
 			let readable = false;
 
 			for (const query of USAGE_QUERIES) {
-				const start = records.length;
 				try {
-					for (const row of db.prepare(query.sql).iterate()) {
+					const sessionTable = query.format === 'v2' && db.prepare('PRAGMA table_info(session_v2)').all().length ? 'session_v2' : 'session';
+					const sessionColumns = db.prepare(`PRAGMA table_info(${sessionTable})`).all().map((column) => String(column.name));
+					const incremental = sessionColumns.includes('time_updated');
+					const revisions = new Map<string, string>();
+					if (incremental) {
+						const columns = ['id', 'time_updated', 'cost', 'tokens_input', 'tokens_output', 'tokens_reasoning', 'tokens_cache_read', 'tokens_cache_write'].filter((column) => sessionColumns.includes(column));
+						for (const row of db.prepare(`SELECT ${columns.join(', ')} FROM ${sessionTable}`).iterate()) {
+							revisions.set(String(row.id), JSON.stringify(row));
+						}
+					}
+					const cached = fresh && incremental ? previous.tables.get(query.format) : undefined;
+					const records = new Map(cached?.records);
+					const changed = cached ? [...revisions].filter(([id, revision]) => cached.revisions.get(id) !== revision).map(([id]) => id) : undefined;
+					for (const [id, record] of records) if (!revisions.has(record.event.sessionId) && incremental) records.delete(id);
+					const parse = (row: Record<string, unknown>) => {
 						const id = String(row.id ?? '');
-						if (!id) continue;
+						if (!id) return;
 
 						const event = parseOpenCodeEvent(
 							{
@@ -145,15 +186,39 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 							String(row.session_id ?? ''),
 							row.time_created == null ? undefined : Number(row.time_created),
 						);
-						if (event) records.push({ id, format: query.format, event });
+						if (event) records.set(id, { id, format: query.format, event });
+					};
+					if (changed && changed.length < 1_000) {
+						const statement = db.prepare(`${query.sql} AND session_id = ?`);
+						const changedIDs = new Set(changed);
+						for (const [id, record] of records) if (changedIDs.has(record.event.sessionId)) records.delete(id);
+						for (const id of changed) {
+							for (const row of statement.iterate(id)) parse(row);
+						}
+					} else {
+						records.clear();
+						for (const row of db.prepare(query.sql).iterate()) parse(row);
 					}
+					tables.set(query.format, { revisions, records });
 					readable = true;
-				} catch {
-					records.length = start;
-				}
+				} catch { /* Older databases may contain only one message format. */ }
 			}
 
-			return readable ? records : null;
+			const sessions: OpenCodeSession[] = [];
+			for (const table of ['session', 'session_v2']) {
+				try {
+					const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column) => String(column.name));
+					const metadata = columns.includes('metadata') ? `CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.opThreads.coordinatorID') END` : 'NULL';
+					for (const row of db.prepare(`SELECT id, title, directory, coalesce(parent_id, ${metadata}) AS parent_id FROM ${table}`).iterate()) {
+						sessions.push({ id: String(row.id), title: String(row.title ?? ''), directory: String(row.directory ?? ''), parent_id: row.parent_id == null ? null : String(row.parent_id) });
+					}
+				} catch { /* Usage can be imported without session metadata. */ }
+			}
+			db.exec('COMMIT');
+			if (!readable) return null;
+			const cached: DatabaseCache = { identity, fingerprint, loadedAt: fresh ? previous.loadedAt : now, tables, sessions };
+			databaseCache.set(dbPath, cached);
+			return attribute(cached);
 		} finally {
 			db.close();
 		}
@@ -179,6 +244,7 @@ export async function loadOpenCodeEvents(): Promise<UnifiedTokenEvent[]> {
 	}
 
 	const records = new Map<string, OpenCodeRecord>();
+	for (const file of databaseCache.keys()) if (!dbPaths.includes(file)) databaseCache.delete(file);
 	let readableDatabase = false;
 
 	for (const dbPath of dbPaths) {

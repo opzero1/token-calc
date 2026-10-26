@@ -9,6 +9,7 @@ import type {
 	ModelAggregation,
 	SourceModelAggregation,
 	ProjectAggregation,
+	OpenDotAggregation,
 	HeatmapCell,
 	DashboardData,
 	Source,
@@ -352,6 +353,24 @@ export function aggregateHeatmap(events: UnifiedTokenEvent[]): HeatmapCell[] {
 	return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export function aggregateByOpenDot(events: UnifiedTokenEvent[]): OpenDotAggregation[] {
+	const map = new Map<string, OpenDotAggregation>();
+	for (const event of events) {
+		if (!event.openDot) continue;
+		const { name, role } = event.openDot;
+		const key = JSON.stringify([name, role]);
+		let aggregate = map.get(key);
+		if (!aggregate) {
+			aggregate = { name, role, tokens: emptyTokens(), costUSD: 0, eventCount: 0 };
+			map.set(key, aggregate);
+		}
+		aggregate.tokens = addTokens(aggregate.tokens, event.tokens);
+		aggregate.costUSD += event.costUSD;
+		aggregate.eventCount++;
+	}
+	return [...map.values()].sort((a, b) => b.costUSD - a.costUSD || a.name.localeCompare(b.name));
+}
+
 export function buildDashboardData(events: UnifiedTokenEvent[]): DashboardData {
 	const daily = aggregateDaily(events);
 	const dailyBySource = aggregateDailyBySource(events);
@@ -395,6 +414,7 @@ export function buildDashboardData(events: UnifiedTokenEvent[]): DashboardData {
 		byModel,
 		bySourceModel,
 		byProject,
+		byOpenDot: aggregateByOpenDot(events),
 		heatmap,
 	};
 }
