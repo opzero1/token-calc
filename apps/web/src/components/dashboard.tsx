@@ -1,78 +1,35 @@
-import type { DashboardSnapshot, Source, TimeRange } from '@token-calc/core'
+import type { TimeRange } from '@token-calc/core'
 import {
   Activity,
-  ArrowUpDown,
   CalendarDays,
   ChevronDown,
-  CircleDollarSign,
   Coins,
   Gauge,
-  Layers3,
   RefreshCw,
   ScanLine,
 } from 'lucide-react'
 import * as React from 'react'
 
+import { ActivityRhythm } from '@/components/activity-rhythm'
 import { Glass } from '@/components/canvasui/Glass'
-import { Badge } from '@/components/ui/badge'
+import { SpendChart } from '@/components/spend-chart'
+import { TokenSkyline } from '@/components/token-skyline'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  formatCompactTokens,
+  formatNumber,
+  formatUsd,
+  RANGES,
+  SOURCE_COLORS,
+  SOURCE_LABELS,
+  totalTokens,
+} from '@/lib/format'
+import type { WebSnapshot } from '@/lib/snapshot'
 import { cn } from '@/lib/utils'
 
-const SOURCE_LABELS: Record<Source, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  gemini: 'Gemini',
-  opencode: 'OpenCode',
-  amp: 'Amp',
-  pi: 'Pi-Agent',
-}
-
-const SOURCE_COLORS: Record<Source, string> = {
-  'claude-code': '#f97360',
-  codex: '#d9ff63',
-  gemini: '#60a5fa',
-  opencode: '#a78bfa',
-  amp: '#fbbf24',
-  pi: '#f472b6',
-}
-
-const RANGES: Array<{ value: TimeRange; label: string }> = [
-  { value: '7', label: '7D' },
-  { value: '30', label: '30D' },
-  { value: '90', label: '90D' },
-  { value: '180', label: '180D' },
-  { value: '365', label: '1Y' },
-  { value: 'all', label: 'ALL' },
-]
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    notation: value >= 1_000_000 ? 'compact' : 'standard',
-  }).format(value)
-}
-
-function formatCompactTokens(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 2,
-  }).format(value)
-}
-
-function formatUsd(value: number, compact = false) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    notation: compact && value >= 1000 ? 'compact' : 'standard',
-    maximumFractionDigits: value < 1 ? 4 : 2,
-  }).format(value)
-}
-
-function totalTokens(tokens: DashboardSnapshot['totals']['tokens']) {
-  return tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead + tokens.reasoning
-}
+export type RangeState = { loading: boolean; live: boolean; hasData: boolean }
 
 function AnimatedTokenCount({ value }: { value: number }) {
   const initialValue = Math.max(0, value - Math.min(Math.max(value * 0.004, 1_000_000), 100_000_000))
@@ -106,7 +63,7 @@ function AnimatedTokenCount({ value }: { value: number }) {
 
   return (
     <div aria-live="polite">
-      <div className="font-heading text-3xl font-medium leading-none tracking-[-0.05em] sm:text-4xl">
+      <div className="mt-3 font-heading text-[clamp(2rem,3.4vw,3.25rem)] font-medium leading-none tracking-[-0.06em]">
         {formatCompactTokens(displayValue)}
       </div>
       <div className="mt-2 font-heading text-[11px] tabular-nums text-muted-foreground">
@@ -114,21 +71,6 @@ function AnimatedTokenCount({ value }: { value: number }) {
       </div>
     </div>
   )
-}
-
-function tokenBreakdown(tokens: DashboardSnapshot['totals']['tokens']) {
-  return [
-    { key: 'input', label: 'In', value: tokens.input, className: 'bg-[#7cf3b5]' },
-    { key: 'output', label: 'Out', value: tokens.output, className: 'bg-[#60a5fa]' },
-    {
-      key: 'cacheCreation',
-      label: 'Cache write',
-      value: tokens.cacheCreation,
-      className: 'bg-[#a78bfa]',
-    },
-    { key: 'cacheRead', label: 'Cache read', value: tokens.cacheRead, className: 'bg-[#fbbf24]' },
-    { key: 'reasoning', label: 'Reasoning', value: tokens.reasoning, className: 'bg-[#f472b6]' },
-  ].filter((item) => item.value > 0)
 }
 
 function shortModel(model: string) {
@@ -142,165 +84,133 @@ function maxOf(values: number[]) {
   return Math.max(1, ...values)
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000
-
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
-
-function parseDateKey(key: string) {
-  return new Date(`${key}T00:00:00.000Z`)
-}
-
-function addDays(date: Date, days: number) {
-  return new Date(date.getTime() + days * DAY_MS)
-}
-
-function startOfWeek(date: Date) {
-  const next = new Date(date)
-  next.setUTCDate(next.getUTCDate() - next.getUTCDay())
-  return next
-}
-
-function endOfWeek(date: Date) {
-  const next = new Date(date)
-  next.setUTCDate(next.getUTCDate() + (6 - next.getUTCDay()))
-  return next
-}
-
-function emptyTokens() {
-  return { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, reasoning: 0 }
-}
-
-type TimelineDay = DashboardSnapshot['daily'][number] & {
-  isFuture: boolean
-}
-
-function buildTimelineDays(snapshot: DashboardSnapshot): TimelineDay[] {
-  const generated = new Date(snapshot.generated)
-  const todayKey = dateKey(generated)
-  const year = generated.getUTCFullYear()
-  const dailyByDate = new Map(snapshot.daily.map((day) => [day.date, day]))
-
-  let start: Date
-  let end: Date
-
-  if (snapshot.range === '365' || snapshot.range === 'all') {
-    start = new Date(Date.UTC(year, 0, 1))
-    end = new Date(Date.UTC(year, 11, 31))
-  } else {
-    const days = Number(snapshot.range)
-    const today = parseDateKey(todayKey)
-    start = addDays(today, -(days - 1))
-    end = today
-  }
-
-  const result: TimelineDay[] = []
-  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
-    const key = dateKey(cursor)
-    const existing = dailyByDate.get(key)
-    result.push({
-      date: key,
-      tokens: existing?.tokens ?? emptyTokens(),
-      costUSD: existing?.costUSD ?? 0,
-      models: existing?.models ?? [],
-      sources: existing?.sources ?? [],
-      eventCount: existing?.eventCount ?? 0,
-      isFuture: key > todayKey,
-    })
-  }
-
-  return result
-}
-
-type HeatmapDay = DashboardSnapshot['heatmap'][number] & {
-  inYear: boolean
-  isFuture: boolean
-}
-
-function buildYearHeatmap(snapshot: DashboardSnapshot): HeatmapDay[] {
-  const generated = new Date(snapshot.generated)
-  const todayKey = dateKey(generated)
-  const year = generated.getUTCFullYear()
-  const firstDay = new Date(Date.UTC(year, 0, 1))
-  const lastDay = new Date(Date.UTC(year, 11, 31))
-  const start = startOfWeek(firstDay)
-  const end = endOfWeek(lastDay)
-  const heatmapByDate = new Map(snapshot.heatmap.map((cell) => [cell.date, cell]))
-  const result: HeatmapDay[] = []
-
-  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
-    const key = dateKey(cursor)
-    const inYear = cursor.getUTCFullYear() === year
-    const isFuture = key > todayKey
-    const existing = heatmapByDate.get(key)
-    result.push({
-      date: key,
-      totalTokens: inYear && !isFuture ? (existing?.totalTokens ?? 0) : 0,
-      costUSD: inYear && !isFuture ? (existing?.costUSD ?? 0) : 0,
-      inYear,
-      isFuture,
-    })
-  }
-
-  return result
+function formatClock(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 interface DashboardProps {
-  snapshot: DashboardSnapshot
+  snapshot: WebSnapshot | null
   range: TimeRange
-  isRefreshing: boolean
+  rangeState: (range: TimeRange) => RangeState
+  error: string | null
+  eventCount: number | null
   onRangeChange: (range: TimeRange) => void
   onRefresh: () => void
 }
 
-export function DashboardLoading() {
+const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+function EventTicker({ value }: { value: number }) {
+  const [rolled, setRolled] = React.useState(false)
+  const [delta, setDelta] = React.useState<{ id: number; amount: number } | null>(null)
+  const previous = React.useRef<number | null>(null)
+
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setRolled(true))
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
+
+  React.useEffect(() => {
+    const before = previous.current
+    previous.current = value
+    if (before !== null && value > before) {
+      setDelta((current) => ({ id: (current?.id ?? 0) + 1, amount: value - before }))
+    }
+  }, [value])
+
+  const text = value.toLocaleString('en-US')
+  const characters = [...text]
   return (
-    <main className="app-shell min-h-screen">
-      <header className="topbar">
-        <div className="flex items-center gap-3">
-          <div className="skeleton size-9 shrink-0 rounded-full" />
-          <div className="grid gap-1.5">
-            <div className="skeleton h-3 w-24 rounded" />
-            <div className="skeleton h-2 w-16 rounded" />
-          </div>
-        </div>
-      </header>
-      <div className="dashboard-content dashboard-stack mx-auto flex w-full max-w-[1500px] flex-col">
-        <section className="hero-panel min-h-[330px]">
-          <div className="hero-content grid h-full lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="grid content-center gap-5">
-              <div className="skeleton h-3 w-40 rounded" />
-              <div className="skeleton h-20 max-w-2xl rounded-2xl" />
-              <div className="skeleton h-4 max-w-lg rounded" />
-            </div>
-            <div className="skeleton min-h-52 rounded-[2rem]" />
-          </div>
-        </section>
-        <div className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          <RefreshCw className="size-3.5 animate-spin text-main" />
-          Reading local model activity
-        </div>
-        <section className="content-grid grid sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }, (_, index) => (
-            <Card key={index} className="h-32 p-[var(--card-padding)]">
-              <div className="skeleton h-3 w-20 rounded" />
-              <div className="skeleton mt-5 h-8 w-28 rounded-lg" />
-            </Card>
-          ))}
-        </section>
-      </div>
-    </main>
+    <span className="relative inline-flex items-center gap-1.5">
+      <span className="sr-only">{text} events indexed</span>
+      <span aria-hidden className="odometer text-foreground">
+        {characters.map((character, index) => {
+          const place = characters.length - index
+          if (!/\d/.test(character)) return <span key={`separator-${place}`}>{character}</span>
+          return (
+            <span key={place} className="odometer-digit">
+              <span
+                className="odometer-strip"
+                style={{
+                  transform: `translateY(-${(rolled ? Number(character) : 0) * 10}%)`,
+                  transitionDelay: `${place * 40}ms`,
+                }}
+              >
+                {DIGITS.map((digit) => (
+                  <span key={digit}>{digit}</span>
+                ))}
+              </span>
+            </span>
+          )
+        })}
+      </span>
+      <span aria-hidden>events</span>
+      {delta ? (
+        <span key={delta.id} className="event-delta" role="status">
+          +{formatNumber(delta.amount)}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
-export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefresh }: DashboardProps) {
-  const averageCost = snapshot.totals.activeDays > 0 ? snapshot.totals.costUSD / snapshot.totals.activeDays : 0
-  const latestGenerated = new Date(snapshot.generated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function SyncStatus({
+  snapshot,
+  state,
+  error,
+  eventCount,
+}: {
+  snapshot: WebSnapshot | null
+  state: RangeState
+  error: string | null
+  eventCount: number | null
+}) {
+  const generated = snapshot ? formatClock(snapshot.generated) : null
+  let label: string
+  if (state.loading) label = snapshot && !state.live ? `Saved ${generated} · scanning` : 'Scanning'
+  else if (error && !state.live) label = 'Scan failed'
+  else if (snapshot) label = state.live ? `Synced ${generated}` : `Saved ${generated}`
+  else label = 'Waiting for data'
+
+  return (
+    <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex" title={error ?? undefined}>
+      <span className={cn('status-dot', state.loading && 'is-active', error && !state.loading && 'is-error')} />
+      {label}
+      {eventCount !== null ? (
+        <>
+          <span aria-hidden className="text-border">
+            /
+          </span>
+          <EventTicker value={eventCount} />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function RangeDot({ state, active }: { state: RangeState; active: boolean }) {
+  if (!state.loading && !state.hasData) return null
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'size-1.5 rounded-full',
+        active ? 'bg-main-foreground' : 'bg-main',
+        state.loading && 'animate-pulse',
+        !state.loading && !state.live && 'opacity-40',
+      )}
+    />
+  )
+}
+
+function Placeholder({ className }: { className?: string }) {
+  return <div className={cn('skeleton rounded-lg', className)} />
+}
+
+export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRangeChange, onRefresh }: DashboardProps) {
+  const state = rangeState(range)
   const rangeLabel = RANGES.find((item) => item.value === range)?.label ?? range
-  const tokenGoal = (Math.floor(snapshot.totals.totalTokens / 1_000_000_000) + 1) * 1_000_000_000
-  const tokensToGoal = tokenGoal - snapshot.totals.totalTokens
-  const tokenGoalProgress = Math.min(100, (snapshot.totals.totalTokens / tokenGoal) * 100)
+  const averageCost = snapshot && snapshot.totals.activeDays > 0 ? snapshot.totals.costUSD / snapshot.totals.activeDays : 0
 
   return (
     <Glass
@@ -332,12 +242,9 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-              <span className={cn('status-dot', isRefreshing && 'is-active')} />
-              {isRefreshing ? 'Scanning' : `Synced ${latestGenerated}`}
-            </div>
-            <Button aria-label="Refresh usage data" onClick={onRefresh} variant="neutral" size="icon" disabled={isRefreshing}>
-              <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
+            <SyncStatus snapshot={snapshot} state={state} error={error} eventCount={eventCount} />
+            <Button aria-label="Refresh usage data" onClick={onRefresh} variant="neutral" size="icon" disabled={state.loading}>
+              <RefreshCw className={cn(state.loading && 'animate-spin')} />
             </Button>
           </div>
         </header>
@@ -346,13 +253,13 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
           <section className="hero-panel">
             <div className="hero-grid" aria-hidden />
             <div className="hero-glow" aria-hidden />
-            <div className="hero-content relative grid lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
-              <div className="flex flex-col items-start">
+            <div className="hero-content relative grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+              <div className="flex min-w-0 flex-col items-start">
                 <div className="eyebrow">
                   <span className="status-dot is-active" />
                   Usage observatory / {rangeLabel}
                 </div>
-                <h1 className="mt-7 max-w-3xl font-heading text-[clamp(2.75rem,7vw,6.75rem)] font-medium leading-[0.86] tracking-[-0.08em]">
+                <h1 className="mt-7 max-w-3xl font-heading text-[clamp(2.75rem,6vw,5.75rem)] font-medium leading-[0.86] tracking-[-0.08em]">
                   See what your <span className="text-main">agents</span> consume.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
@@ -361,102 +268,98 @@ export function Dashboard({ snapshot, range, isRefreshing, onRangeChange, onRefr
                 </p>
                 <TabsList className="mt-7 w-full sm:w-auto" aria-label="Usage window">
                   {RANGES.map((item) => (
-                    <TabsTrigger key={item.value} active={range === item.value} onClick={() => onRangeChange(item.value)}>
+                    <TabsTrigger
+                      key={item.value}
+                      active={range === item.value}
+                      onClick={() => onRangeChange(item.value)}
+                      className="inline-flex items-center justify-center gap-1.5"
+                    >
                       {item.label}
+                      <RangeDot state={rangeState(item.value)} active={range === item.value} />
                     </TabsTrigger>
                   ))}
                 </TabsList>
-              </div>
-
-              <div className="spend-readout" data-glass-target>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="eyebrow">Estimated spend</span>
-                  <CircleDollarSign className="size-5 text-main" />
-                </div>
-                <div className="mt-12 font-heading text-[clamp(3.25rem,7vw,6rem)] font-medium leading-none tracking-[-0.08em]">
-                  {formatUsd(snapshot.totals.costUSD)}
-                </div>
-                <div className="mt-5 border-t border-border pt-5">
-                  <div className="flex items-start justify-between gap-5">
-                    <div>
-                      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                        Live token volume
+                <div className="mt-9 grid w-full gap-6 border-t border-border pt-6 sm:max-w-xl sm:grid-cols-2">
+                  <div data-glass-target>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Estimated spend
+                    </div>
+                    {snapshot ? (
+                      <div className="mt-3 font-heading text-[clamp(2rem,3.4vw,3.25rem)] font-medium leading-none tracking-[-0.06em]">
+                        {formatUsd(snapshot.totals.costUSD)}
                       </div>
+                    ) : (
+                      <Placeholder className="mt-3 h-[clamp(2rem,3.4vw,3.25rem)] w-44" />
+                    )}
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      {snapshot ? `${formatUsd(averageCost)} per active day` : 'Calculating'}
+                    </div>
+                  </div>
+                  <div data-glass-target>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Token volume
+                    </div>
+                    {snapshot ? (
                       <AnimatedTokenCount value={snapshot.totals.totalTokens} />
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                        Next goal
+                    ) : (
+                      <div className="mt-3 grid gap-2">
+                        <Placeholder className="h-[clamp(2rem,3.4vw,3.25rem)] w-32" />
+                        <Placeholder className="h-3 w-40 rounded" />
                       </div>
-                      <div className="mt-2 font-heading text-xl font-medium text-main">{formatCompactTokens(tokenGoal)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
-                    <div
-                      className="h-full rounded-full bg-main transition-[width] duration-1000 ease-out"
-                      style={{ width: `${tokenGoalProgress}%` }}
-                    />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    <span>{tokenGoalProgress.toFixed(1)}% complete</span>
-                    <span>{formatCompactTokens(tokensToGoal)} remaining</span>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
-          </section>
 
-          <section className="source-strip" aria-label="Detected local sources">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              <Layers3 className="size-3.5" />
-              Live inputs
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {snapshot.detected.length === 0 ? (
-                <Badge variant="neutral">No sources found</Badge>
-              ) : (
-                snapshot.detected.map((source) => (
-                  <Badge key={source} variant="neutral" className="source-badge">
-                    <span className="size-2 rounded-full" style={{ backgroundColor: SOURCE_COLORS[source] }} />
-                    {SOURCE_LABELS[source]}
-                  </Badge>
-                ))
-              )}
-            </div>
-            <div className="ml-auto hidden text-xs text-muted-foreground md:block">
-              {snapshot.totalEventCount.toLocaleString()} events indexed
+              <TokenSkyline snapshot={snapshot} syncing={state.loading} className="min-h-[24rem] sm:min-h-[28rem]" />
             </div>
           </section>
 
           <section className="content-grid grid sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={<CalendarDays />} label="Active days" value={formatNumber(snapshot.totals.activeDays)} detail="Days with recorded usage" />
-            <MetricCard icon={<Gauge />} label="Daily burn" value={formatUsd(averageCost)} detail="Average per active day" />
-            <MetricCard icon={<Activity />} label="Requests" value={formatNumber(snapshot.totals.eventCount)} detail="Model events in this window" />
-            <MetricCard icon={<Coins />} label="Tracked tools" value={formatNumber(snapshot.detected.length)} detail="Local sources reporting" />
+            <MetricCard icon={<CalendarDays />} label="Active days" value={snapshot ? formatNumber(snapshot.totals.activeDays) : null} detail="Days with recorded usage" />
+            <MetricCard icon={<Gauge />} label="Daily burn" value={snapshot ? formatUsd(averageCost) : null} detail="Average per active day" />
+            <MetricCard icon={<Activity />} label="Requests" value={snapshot ? formatNumber(snapshot.totals.eventCount) : null} detail="Model events in this window" />
+            <MetricCard icon={<Coins />} label="Tracked tools" value={snapshot ? formatNumber(snapshot.detected.length) : null} detail="Local sources reporting" />
           </section>
 
-          {snapshot.totals.eventCount === 0 ? (
+          {!snapshot ? (
+            <>
+              <ChartPlaceholder className="h-[440px]" />
+              <section className="content-grid grid lg:grid-cols-[1.3fr_0.7fr]">
+                <ChartPlaceholder className="h-[480px]" />
+                <ChartPlaceholder className="h-[480px]" />
+              </section>
+            </>
+          ) : snapshot.totals.eventCount === 0 ? (
             <EmptyState errors={snapshot.errors} />
           ) : (
             <>
-              <DailyStackedBars snapshot={snapshot} />
-              <section className="content-grid grid lg:grid-cols-[0.82fr_1.18fr]">
-                <SourceDonut snapshot={snapshot} />
+              <SpendChart snapshot={snapshot} />
+              <section className="content-grid grid lg:grid-cols-[1.3fr_0.7fr]">
+                <ActivityRhythm snapshot={snapshot} />
                 <TopModels snapshot={snapshot} />
               </section>
-              <Heatmap snapshot={snapshot} />
-              {snapshot.byOpenDot.length > 0 && <OpenDotTable snapshot={snapshot} />}
               <DailyTable snapshot={snapshot} />
             </>
           )}
 
           <footer className="flex flex-col gap-2 border-t border-border px-1 pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>All analysis stays on this machine.</span>
-            <span>Last indexed at {latestGenerated}</span>
+            <span>{snapshot ? `Last indexed at ${formatClock(snapshot.generated)}` : 'Indexing…'}</span>
           </footer>
         </main>
       </div>
     </Glass>
+  )
+}
+
+function ChartPlaceholder({ className }: { className?: string }) {
+  return (
+    <Card className={cn('overflow-hidden p-[var(--card-padding)]', className)}>
+      <Placeholder className="h-3 w-24 rounded" />
+      <Placeholder className="mt-4 h-7 w-48" />
+      <Placeholder className="mt-8 h-[calc(100%-6rem)] w-full rounded-2xl opacity-60" />
+    </Card>
   )
 }
 
@@ -468,7 +371,7 @@ function MetricCard({
 }: {
   icon: React.ReactNode
   label: string
-  value: string
+  value: string | null
   detail: string
 }) {
   return (
@@ -479,13 +382,17 @@ function MetricCard({
         </div>
         <span className="font-heading text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
       </div>
-      <div className="mt-8 break-words font-heading text-3xl font-medium leading-none tracking-[-0.05em]">{value}</div>
+      {value === null ? (
+        <Placeholder className="mt-8 h-[1.875rem] w-28" />
+      ) : (
+        <div className="mt-8 break-words font-heading text-3xl font-medium leading-none tracking-[-0.05em]">{value}</div>
+      )}
       <div className="mt-2 text-xs text-muted-foreground">{detail}</div>
     </Card>
   )
 }
 
-function EmptyState({ errors }: { errors: DashboardSnapshot['errors'] }) {
+function EmptyState({ errors }: { errors: WebSnapshot['errors'] }) {
   return (
     <Card className="overflow-hidden p-6 sm:p-10">
       <div className="mb-8 flex size-14 items-center justify-center rounded-full border border-main/25 bg-main/10 text-main">
@@ -510,339 +417,95 @@ function EmptyState({ errors }: { errors: DashboardSnapshot['errors'] }) {
   )
 }
 
-function DailyStackedBars({ snapshot }: { snapshot: DashboardSnapshot }) {
-  const days = buildTimelineDays(snapshot)
-  const sourceByDay = new Map(snapshot.dailyBySource.map((item) => [`${item.date}:${item.source}`, item]))
-  const maxCost = maxOf(days.map((day) => day.costUSD))
+const TOKEN_PARTS = [
+  { key: 'input', label: 'Input', color: '#7cf3b5' },
+  { key: 'output', label: 'Output', color: '#60a5fa' },
+  { key: 'cacheCreation', label: 'Cache write', color: '#a78bfa' },
+  { key: 'cacheRead', label: 'Cache read', color: '#fbbf24' },
+  { key: 'reasoning', label: 'Reasoning', color: '#f472b6' },
+] as const
 
+function TokenMixBar({ tokens, width }: { tokens: WebSnapshot['totals']['tokens']; width: number }) {
+  const total = totalTokens(tokens)
   return (
-    <Card>
-      <CardHeader>
-        <div className="eyebrow">01 / Velocity</div>
-        <CardTitle className="mt-2 text-2xl sm:text-3xl">Daily spend</CardTitle>
-        <CardDescription>Estimated cost per day, segmented by local coding tool.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="h-72 overflow-x-auto px-1 pb-2 sm:px-2">
-          <div
-            className="grid h-full items-end gap-1"
-            style={{
-              gridTemplateColumns: `repeat(${days.length}, minmax(4px, 1fr))`,
-              minWidth: `${Math.max(560, days.length * 8)}px`,
-            }}
-          >
-            {days.map((day, index) => {
-              const shouldLabel = index === 0 || index === days.length - 1 || day.date.endsWith('-01')
-
-              return (
-                <div key={day.date} className="flex min-w-0 flex-col items-center gap-2">
-                  <div
-                    className={cn(
-                      'flex h-56 w-full min-w-0 items-end overflow-hidden rounded-t-md bg-background',
-                      day.isFuture && 'bg-secondary-background opacity-70',
-                    )}
-                    title={`${day.date}: ${formatNumber(totalTokens(day.tokens))} tokens, ${formatUsd(day.costUSD)}`}
-                  >
-                    {day.costUSD > 0 ? (
-                      <div
-                        className="flex w-full flex-col justify-end"
-                        style={{ height: `${Math.max(3, (day.costUSD / maxCost) * 100)}%` }}
-                      >
-                        {day.sources.map((source) => {
-                          const item = sourceByDay.get(`${day.date}:${source}`)
-                          const height = day.costUSD > 0 && item ? (item.costUSD / day.costUSD) * 100 : 0
-                          return (
-                            <div
-                              key={source}
-                              title={`${day.date} ${SOURCE_LABELS[source]} ${formatUsd(item?.costUSD ?? 0)}`}
-                              className="border-t border-black/20 first:border-t-0"
-                              style={{
-                                height: `${height}%`,
-                                backgroundColor: SOURCE_COLORS[source],
-                              }}
-                            />
-                          )
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="h-7 w-max whitespace-nowrap text-center text-[9px] font-semibold leading-none text-muted-foreground">
-                    {shouldLabel ? day.date.slice(5) : ''}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div
+      className="flex h-full overflow-hidden rounded-full transition-[width] duration-500 ease-out"
+      style={{ width: `${width}%` }}
+    >
+      {TOKEN_PARTS.map((part) =>
+        tokens[part.key] > 0 ? (
+          <span
+            key={part.key}
+            className="h-full border-r border-black/40 last:border-r-0"
+            style={{ width: `${(tokens[part.key] / Math.max(1, total)) * 100}%`, backgroundColor: part.color }}
+          />
+        ) : null,
+      )}
+    </div>
   )
 }
 
-function SourceDonut({ snapshot }: { snapshot: DashboardSnapshot }) {
-  const rows = snapshot.bySource
-  const total = rows.reduce((sum, row) => sum + row.costUSD, 0)
-  const radius = 72
-  const circumference = 2 * Math.PI * radius
-  let offset = 0
+function TopModels({ snapshot }: { snapshot: WebSnapshot }) {
+  const [metric, setMetric] = React.useState<'cost' | 'tokens'>('cost')
+  const valueOf = (model: WebSnapshot['byModel'][number]) => (metric === 'cost' ? model.costUSD : totalTokens(model.tokens))
+  const models = [...snapshot.byModel].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 8)
+  const maxValue = maxOf(models.map(valueOf))
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="eyebrow">02 / Distribution</div>
-        <CardTitle className="mt-2 text-2xl">Tool mix</CardTitle>
-        <CardDescription>Where estimated spend is originating.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col items-center gap-5 sm:flex-row lg:flex-col xl:flex-row">
-          <svg className="size-48 shrink-0" viewBox="0 0 190 190" role="img" aria-label="Cost breakdown by source">
-            <circle
-              cx="95"
-              cy="95"
-              r={radius}
-              fill="var(--secondary-background)"
-              stroke="var(--border)"
-              strokeWidth="8"
-            />
-            {rows.map((row) => {
-              const length = total > 0 ? (row.costUSD / total) * circumference : 0
-              const dashOffset = offset
-              offset -= length
-              return (
-                <circle
-                  key={row.source}
-                  cx="95"
-                  cy="95"
-                  r={radius}
-                  fill="transparent"
-                  stroke={SOURCE_COLORS[row.source]}
-                  strokeDasharray={`${length} ${circumference - length}`}
-                  strokeDashoffset={dashOffset}
-                  strokeLinecap="butt"
-                  strokeWidth="28"
-                  transform="rotate(-90 95 95)"
-                />
-              )
-            })}
-            <text x="95" y="90" textAnchor="middle" className="fill-foreground font-heading text-2xl font-black">
-              {formatUsd(total, true)}
-            </text>
-            <text x="95" y="114" textAnchor="middle" className="fill-muted-foreground text-xs font-black">
-              total
-            </text>
-          </svg>
-          <div className="grid w-full gap-2">
-            {rows.map((row) => (
-              <div
-                key={row.source}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white/[0.03] px-3 py-2"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="size-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: SOURCE_COLORS[row.source] }}
-                  />
-                  <span className="truncate font-semibold">{SOURCE_LABELS[row.source]}</span>
-                </div>
-                <span className="font-heading text-sm font-bold">{formatUsd(row.costUSD)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function TopModels({ snapshot }: { snapshot: DashboardSnapshot }) {
-  const [activeTab, setActiveTab] = React.useState<'cost' | 'tokens'>('cost')
-  const models = snapshot.byModel.slice(0, 8)
-  const tokenModels = [...snapshot.byModel].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens)).slice(0, 8)
-  const maxCost = maxOf(models.map((model) => model.costUSD))
-  const maxTokens = maxOf(tokenModels.map((model) => totalTokens(model.tokens)))
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+    <Card className="flex min-w-0 flex-col">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="eyebrow">03 / Models</div>
           <CardTitle className="mt-2 text-2xl">Model leaderboard</CardTitle>
-          <CardDescription className="mt-1">Ranked by cost or total token volume.</CardDescription>
+          <CardDescription className="mt-1">Top models by {metric === 'cost' ? 'spend' : 'tokens'}, colored by token mix.</CardDescription>
         </div>
-        <TabsList>
-          <TabsTrigger active={activeTab === 'cost'} onClick={() => setActiveTab('cost')}>
-            Cost
+        <TabsList aria-label="Rank models by">
+          <TabsTrigger active={metric === 'cost'} onClick={() => setMetric('cost')}>
+            Spend
           </TabsTrigger>
-          <TabsTrigger active={activeTab === 'tokens'} onClick={() => setActiveTab('tokens')}>
+          <TabsTrigger active={metric === 'tokens'} onClick={() => setMetric('tokens')}>
             Tokens
           </TabsTrigger>
         </TabsList>
       </CardHeader>
-      <CardContent className="grid gap-3">
-        {activeTab === 'cost'
-          ? models.map((model, index) => (
-              <div key={model.model} className="grid gap-1">
-                <div className="flex items-center justify-between gap-3 text-sm font-semibold">
-                  <span className="truncate">
-                    {index + 1}. {shortModel(model.model)}
-                  </span>
-                  <span>{formatUsd(model.costUSD)}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-background">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#8b5cf6] to-main"
-                    style={{ width: `${Math.max(2, (model.costUSD / maxCost) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))
-          : tokenModels.map((model, index) => {
-              const total = totalTokens(model.tokens)
-              const breakdown = tokenBreakdown(model.tokens)
-
-              return (
-                <div key={model.model} className="grid gap-1.5">
-                  <div className="flex items-center justify-between gap-3 text-sm font-semibold">
-                    <span className="truncate">
-                      {index + 1}. {shortModel(model.model)}
-                    </span>
-                    <span>{formatNumber(total)}</span>
-                  </div>
-                  <div
-                    className="h-2 overflow-hidden rounded-full bg-background"
-                    title={`${formatNumber(total)} total tokens`}
-                  >
-                    <div
-                      className="h-full rounded-full bg-main"
-                      style={{ width: `${Math.max(2, (total / maxTokens) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-[11px] font-black uppercase">
-                    <span>{formatUsd(model.costUSD)}</span>
-                    <span>{formatNumber(model.eventCount)} events</span>
-                  </div>
-                  <div
-                    className="flex h-2 overflow-hidden rounded-full bg-background"
-                    title={breakdown.map((item) => `${item.label}: ${formatNumber(item.value)}`).join(', ')}
-                  >
-                    {breakdown.map((item) => (
-                      <div
-                        key={item.key}
-                        className={cn('h-full border-r border-background last:border-r-0', item.className)}
-                        style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%` }}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold">
-                    {breakdown.map((item) => (
-                      <span key={item.key} className="whitespace-nowrap">
-                        {item.label}: {formatNumber(item.value)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
-  const [hovered, setHovered] = React.useState<HeatmapDay | null>(null)
-  const cells = buildYearHeatmap(snapshot)
-  const maxCost = maxOf(cells.map((cell) => cell.costUSD))
-  const year = new Date(snapshot.generated).getUTCFullYear()
-  const weeks = Math.ceil(cells.length / 7)
-  const monthLabels = cells.flatMap((cell, index) => {
-    const date = parseDateKey(cell.date)
-    if (!cell.inYear || date.getUTCDate() !== 1) return []
-    return [{ label: date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }), week: Math.floor(index / 7) }]
-  })
-
-  return (
-    <Card>
-      <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="eyebrow">04 / Year in focus</div>
-          <CardTitle className="mt-2 text-2xl">{year} activity</CardTitle>
-          <CardDescription className="mt-1">A day-by-day view of token activity and estimated spend.</CardDescription>
-        </div>
-        <div className="min-h-[68px] min-w-60 rounded-xl border border-border bg-black/15 px-4 py-3 md:text-right">
-          {hovered ? (
-            <>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                {parseDateKey(hovered.date).toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  timeZone: 'UTC',
-                })}
-              </div>
-              <div className="mt-2 font-heading text-sm font-medium">
-                {formatCompactTokens(hovered.totalTokens)} tokens <span className="text-muted-foreground">/</span>{' '}
-                {formatUsd(hovered.costUSD)}
-              </div>
-            </>
-          ) : (
-            <div className="flex h-full items-center text-xs leading-5 text-muted-foreground md:justify-end">
-              Hover a date to inspect its usage.
-            </div>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto pb-2">
-          <div className="min-w-[64rem]">
-            <div
-              className="mb-2 ml-9 grid gap-[3px] text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-              style={{ gridTemplateColumns: `repeat(${weeks}, 1rem)` }}
-            >
-              {monthLabels.map((month) => (
-                <span key={`${month.label}:${month.week}`} style={{ gridColumn: month.week + 1 }}>
-                  {month.label}
-                </span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <div className="grid w-7 shrink-0 grid-rows-7 gap-[3px] text-[9px] font-medium text-muted-foreground">
-                {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((label, index) => (
-                  <span key={index} className="flex h-4 items-center">
-                    {label}
-                  </span>
-                ))}
-              </div>
-              <div
-                className="grid grid-flow-col grid-rows-7 justify-start gap-[3px]"
-                onMouseLeave={() => setHovered(null)}
+      <CardContent className="flex flex-1 flex-col">
+        <ol className="grid gap-0.5">
+          {models.map((model, index) => {
+            const tokenTotal = totalTokens(model.tokens)
+            const detail = TOKEN_PARTS.filter((part) => model.tokens[part.key] > 0)
+              .map((part) => `${part.label}: ${formatCompactTokens(model.tokens[part.key])}`)
+              .join(' · ')
+            return (
+              <li
+                key={model.model}
+                className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]"
+                title={detail}
               >
-                {cells.map((cell) => {
-                  const level = Math.ceil((cell.costUSD / maxCost) * 4)
-                  const colors = ['#17181d', '#303720', '#596b25', '#91b83d', '#d9ff63']
-                  return (
-                    <div
-                      key={cell.date}
-                      className={cn(
-                        'size-4 rounded-[4px] border border-border transition-transform duration-150 hover:scale-125 hover:border-white/40',
-                        !cell.inYear && 'invisible',
-                        cell.isFuture && 'bg-secondary-background opacity-70',
-                      )}
-                      style={{ backgroundColor: colors[level] }}
-                      title={`${cell.date}: ${formatNumber(cell.totalTokens)} tokens, ${formatUsd(cell.costUSD)}`}
-                      onMouseEnter={() => setHovered(cell)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              <span>Less</span>
-              {['#17181d', '#303720', '#596b25', '#91b83d', '#d9ff63'].map((color) => (
-                <span key={color} className="size-3 rounded-[3px] border border-border" style={{ backgroundColor: color }} />
-              ))}
-              <span>More</span>
-            </div>
-          </div>
+                <span className="row-span-2 self-start pt-px font-heading text-xs tabular-nums text-muted-foreground">
+                  {index + 1}
+                </span>
+                <span className="truncate text-sm font-semibold">{shortModel(model.model)}</span>
+                <span className="text-right font-heading text-sm font-medium tabular-nums">
+                  {metric === 'cost' ? formatUsd(model.costUSD) : formatCompactTokens(tokenTotal)}
+                </span>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <TokenMixBar tokens={model.tokens} width={Math.max(2, (valueOf(model) / maxValue) * 100)} />
+                </div>
+                <span className="text-right text-[11px] tabular-nums text-muted-foreground">
+                  {metric === 'cost' ? `${formatCompactTokens(tokenTotal)} tok` : formatUsd(model.costUSD, true)} ·{' '}
+                  {formatNumber(model.eventCount)} req
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+        <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1.5 border-t border-border pt-4 text-[10px] font-semibold text-muted-foreground">
+          {TOKEN_PARTS.map((part) => (
+            <span key={part.key} className="inline-flex items-center gap-1.5">
+              <span className="size-2 rounded-full" style={{ backgroundColor: part.color }} />
+              {part.label}
+            </span>
+          ))}
         </div>
       </CardContent>
     </Card>
@@ -851,51 +514,29 @@ function Heatmap({ snapshot }: { snapshot: DashboardSnapshot }) {
 
 type SortKey = 'date' | 'cost' | 'tokens' | 'events'
 
-function OpenDotTable({ snapshot }: { snapshot: DashboardSnapshot }) {
-  return (
-    <Card data-glass-target>
-      <CardHeader>
-        <CardTitle>open-dot usage</CardTitle>
-        <CardDescription>Attributed OpenCode usage by dot and role. Already included in the totals above.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Dot</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead className="text-right">Requests</TableHead>
-              <TableHead className="text-right">Tokens</TableHead>
-              <TableHead className="text-right">Cost</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {snapshot.byOpenDot.map((dot) => (
-              <TableRow key={JSON.stringify([dot.name, dot.role])}>
-                <TableCell className="font-bold">{dot.name}</TableCell>
-                <TableCell>{dot.role}</TableCell>
-                <TableCell className="text-right">{formatNumber(dot.eventCount)}</TableCell>
-                <TableCell className="text-right">{formatNumber(totalTokens(dot.tokens))}</TableCell>
-                <TableCell className="text-right">{formatUsd(dot.costUSD)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
-}
+const SORTS: Array<{ key: SortKey; label: string }> = [
+  { key: 'date', label: 'Recent' },
+  { key: 'cost', label: 'Spend' },
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'events', label: 'Requests' },
+]
+const LEDGER_PAGE = 14
+const LEDGER_COLUMNS = 'md:grid-cols-[minmax(7rem,0.8fr)_4rem_minmax(0,2fr)_5.5rem_5.5rem_minmax(9rem,1fr)_1rem]'
 
-function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
+function DailyTable({ snapshot }: { snapshot: WebSnapshot }) {
   const [sortKey, setSortKey] = React.useState<SortKey>('date')
-  const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set())
+  const [expanded, setExpanded] = React.useState<string | null>(null)
+  const [visible, setVisible] = React.useState(LEDGER_PAGE)
+  const todayKey = snapshot.generated.slice(0, 10)
+
   const detailByDate = React.useMemo(() => {
-    const map = new Map<string, typeof snapshot.dailyBySourceModel>()
+    const map = new Map<string, WebSnapshot['dailyBySourceModel']>()
     for (const row of snapshot.dailyBySourceModel) {
       const rows = map.get(row.date) ?? []
       rows.push(row)
       map.set(row.date, rows)
     }
+    for (const rows of map.values()) rows.sort((a, b) => b.costUSD - a.costUSD || totalTokens(b.tokens) - totalTokens(a.tokens))
     return map
   }, [snapshot.dailyBySourceModel])
 
@@ -907,113 +548,171 @@ function DailyTable({ snapshot }: { snapshot: DashboardSnapshot }) {
       return b.eventCount - a.eventCount
     })
   }, [snapshot.daily, sortKey])
-
-  function toggle(date: string) {
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (next.has(date)) next.delete(date)
-      else next.add(date)
-      return next
-    })
-  }
+  const maxCost = maxOf(rows.map((day) => day.costUSD))
 
   return (
     <Card>
-      <CardHeader>
-        <div className="eyebrow">05 / Ledger</div>
-        <CardTitle className="mt-2 text-2xl">Daily details</CardTitle>
-        <CardDescription>Select a row to inspect tool and model usage.</CardDescription>
+      <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="eyebrow">04 / Ledger</div>
+          <CardTitle className="mt-2 text-2xl">Daily details</CardTitle>
+          <CardDescription className="mt-1">
+            {rows.length.toLocaleString()} active {rows.length === 1 ? 'day' : 'days'}. Open a day to see every tool and model.
+          </CardDescription>
+        </div>
+        <TabsList aria-label="Sort days by">
+          {SORTS.map((sort) => (
+            <TabsTrigger key={sort.key} active={sortKey === sort.key} onClick={() => setSortKey(sort.key)}>
+              {sort.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableHead label="Date" sortKey="date" active={sortKey === 'date'} onSort={setSortKey} />
-              <TableHead>Sources</TableHead>
-              <TableHead>Models</TableHead>
-              <SortableHead
-                label="Tokens"
-                sortKey="tokens"
-                active={sortKey === 'tokens'}
-                onSort={setSortKey}
-                className="text-right"
-              />
-              <SortableHead
-                label="Cost"
-                sortKey="cost"
-                active={sortKey === 'cost'}
-                onSort={setSortKey}
-                className="text-right"
-              />
-              <SortableHead
-                label="Events"
-                sortKey="events"
-                active={sortKey === 'events'}
-                onSort={setSortKey}
-                className="text-right"
-              />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((day) => (
-              <React.Fragment key={day.date}>
-                <TableRow className="cursor-pointer hover:bg-white/[0.04]" onClick={() => toggle(day.date)}>
-                  <TableCell className="font-black">
-                    <ChevronDown
-                      className={cn('mr-2 inline size-4 transition-transform', expanded.has(day.date) && 'rotate-180')}
-                    />
-                    {day.date}
-                  </TableCell>
-                  <TableCell>{day.sources.map((source) => SOURCE_LABELS[source]).join(', ')}</TableCell>
-                  <TableCell className="max-w-[280px] truncate">{day.models.map(shortModel).join(', ')}</TableCell>
-                  <TableCell className="text-right font-black">{formatNumber(totalTokens(day.tokens))}</TableCell>
-                  <TableCell className="text-right font-black">{formatUsd(day.costUSD)}</TableCell>
-                  <TableCell className="text-right font-black">{day.eventCount.toLocaleString()}</TableCell>
-                </TableRow>
-                {expanded.has(day.date)
-                  ? (detailByDate.get(day.date) ?? []).map((detail) => (
-                      <TableRow key={`${detail.date}:${detail.source}:${detail.model}`} className="bg-white/[0.025]">
-                        <TableCell />
-                        <TableCell className="font-black">{SOURCE_LABELS[detail.source]}</TableCell>
-                        <TableCell>{shortModel(detail.model)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(totalTokens(detail.tokens))}</TableCell>
-                        <TableCell className="text-right">{formatUsd(detail.costUSD)}</TableCell>
-                        <TableCell className="text-right">{detail.eventCount.toLocaleString()}</TableCell>
-                      </TableRow>
-                    ))
-                  : null}
-              </React.Fragment>
-            ))}
-          </TableBody>
-        </Table>
+        <div
+          className={cn(
+            'hidden gap-3 px-3 pb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground md:grid',
+            LEDGER_COLUMNS,
+          )}
+        >
+          <span>Day</span>
+          <span>Tools</span>
+          <span>Models</span>
+          <span className="text-right">Tokens</span>
+          <span className="text-right">Requests</span>
+          <span className="text-right">Spend</span>
+          <span />
+        </div>
+        <div className="grid gap-1">
+          {rows.slice(0, visible).map((day) => {
+            const details = detailByDate.get(day.date) ?? []
+            const topModels = [...new Set(details.map((detail) => detail.model))].slice(0, 2)
+            const isOpen = expanded === day.date
+            const date = new Date(`${day.date}T00:00:00.000Z`)
+            return (
+              <div
+                key={day.date}
+                className={cn(
+                  'rounded-2xl border transition-colors',
+                  isOpen ? 'border-border bg-white/[0.035]' : 'border-transparent hover:bg-white/[0.025]',
+                )}
+              >
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setExpanded(isOpen ? null : day.date)}
+                  className={cn('grid w-full grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-3 px-3 py-3 text-left', LEDGER_COLUMNS)}
+                >
+                  <span>
+                    <span className="block font-heading text-sm font-medium">
+                      {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      {day.date === todayKey ? 'Today' : day.date.slice(0, 4)}
+                    </span>
+                  </span>
+                  <span className="hidden items-center md:flex">
+                    {day.sources.map((source) => (
+                      <span
+                        key={source}
+                        title={SOURCE_LABELS[source]}
+                        className="-ml-1 size-3 rounded-full ring-2 ring-secondary-background first:ml-0"
+                        style={{ backgroundColor: SOURCE_COLORS[source] }}
+                      />
+                    ))}
+                  </span>
+                  <span className="hidden min-w-0 items-center gap-1.5 md:flex">
+                    {topModels.map((model) => (
+                      <span
+                        key={model}
+                        className="min-w-0 truncate rounded-full border border-border bg-white/[0.03] px-2 py-0.5 text-xs font-medium"
+                      >
+                        {shortModel(model)}
+                      </span>
+                    ))}
+                    {day.models.length > topModels.length ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">+{day.models.length - topModels.length}</span>
+                    ) : null}
+                  </span>
+                  <span className="hidden text-right font-heading text-sm tabular-nums md:block">
+                    {formatCompactTokens(totalTokens(day.tokens))}
+                  </span>
+                  <span className="hidden text-right font-heading text-sm tabular-nums text-muted-foreground md:block">
+                    {formatNumber(day.eventCount)}
+                  </span>
+                  <span className="flex items-center justify-end gap-3">
+                    <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-white/[0.06] lg:block">
+                      <span
+                        className="block h-full rounded-full bg-main"
+                        style={{ width: `${Math.max(3, (day.costUSD / maxCost) * 100)}%` }}
+                      />
+                    </span>
+                    <span className="font-heading text-sm font-medium tabular-nums">{formatUsd(day.costUSD)}</span>
+                  </span>
+                  <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
+                </button>
+                {isOpen ? <DayBreakdown details={details} dayCost={day.costUSD} /> : null}
+              </div>
+            )
+          })}
+        </div>
+        {rows.length > LEDGER_PAGE ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4 text-xs text-muted-foreground">
+            <span>
+              Showing {Math.min(visible, rows.length).toLocaleString()} of {rows.length.toLocaleString()} days
+            </span>
+            <div className="flex gap-2">
+              {visible < rows.length ? (
+                <>
+                  <Button variant="neutral" size="sm" onClick={() => setVisible((count) => count + 30)}>
+                    Show 30 more
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setVisible(rows.length)}>
+                    Show all
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setVisible(LEDGER_PAGE)}>
+                  Show less
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
 }
 
-function SortableHead({
-  label,
-  sortKey,
-  active,
-  onSort,
-  className,
-}: {
-  label: string
-  sortKey: SortKey
-  active: boolean
-  onSort: (key: SortKey) => void
-  className?: string
-}) {
+function DayBreakdown({ details, dayCost }: { details: WebSnapshot['dailyBySourceModel']; dayCost: number }) {
   return (
-    <TableHead className={className}>
-      <button
-        className={cn('inline-flex items-center gap-1 font-heading font-bold', active && 'text-main')}
-        type="button"
-        onClick={() => onSort(sortKey)}
-      >
-        {label}
-        <ArrowUpDown className="size-3.5" />
-      </button>
-    </TableHead>
+    <div className="grid gap-0.5 border-t border-border px-3 pb-3 pt-2">
+      {details.map((detail) => (
+        <div
+          key={`${detail.source}:${detail.model}`}
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-xs md:grid-cols-[7.5rem_minmax(0,1fr)_minmax(5rem,1fr)_5rem_5rem_6rem]"
+        >
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: SOURCE_COLORS[detail.source] }} />
+            {SOURCE_LABELS[detail.source]}
+          </span>
+          <span className="truncate font-medium max-md:order-first max-md:col-span-2">{shortModel(detail.model)}</span>
+          <span className="hidden h-1 overflow-hidden rounded-full bg-white/[0.06] md:block">
+            <span
+              className="block h-full rounded-full"
+              style={{
+                width: `${dayCost > 0 ? Math.max(2, (detail.costUSD / dayCost) * 100) : 0}%`,
+                backgroundColor: SOURCE_COLORS[detail.source],
+              }}
+            />
+          </span>
+          <span className="hidden text-right tabular-nums md:block">{formatCompactTokens(totalTokens(detail.tokens))}</span>
+          <span className="hidden text-right tabular-nums text-muted-foreground md:block">
+            {formatNumber(detail.eventCount)} req
+          </span>
+          <span className="text-right font-heading tabular-nums">{formatUsd(detail.costUSD)}</span>
+        </div>
+      ))}
+    </div>
   )
 }

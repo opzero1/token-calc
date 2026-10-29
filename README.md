@@ -32,7 +32,7 @@ The default home is `~/.opendot`. Set `OPEN_DOT_HOME` if your dots live elsewher
 
 The first scan still reads historical data. Later scans in the same process reuse unchanged Codex files and OpenCode sessions. OpenCode refreshes changed sessions from session revision counters and performs a full reconciliation every five minutes to catch edits that bypass those counters. Source databases remain read-only.
 
-Concurrent snapshot requests share ingestion. Dashboard snapshots are cached for ten seconds; expired requests wait for fresh data. Only events in the selected period need cost enrichment. A new CLI process starts with cold caches.
+Snapshot requests made within ten seconds of a scan reuse it, including requests for other ranges. Dashboard snapshots expire ten seconds after the scan they came from; expired requests wait for fresh data. Only events in the selected period need cost enrichment. A new CLI process starts with cold caches.
 
 Measure three scans in one process:
 
@@ -53,7 +53,13 @@ pnpm dev
 
 Open `http://127.0.0.1:6767`.
 
-The dashboard refreshes automatically and includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time.
+The dashboard includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time. It loads the selected range first, then calculates the other ranges in the background, so switching ranges doesn't wait for a scan. A dot on each range shows whether its data is loading or ready. The selected range refreshes every minute; another range refreshes when you open it, if its data is more than a minute old.
+
+The browser keeps the last snapshot of each range in IndexedDB. On later visits the page shows that saved data immediately, marked as saved in the header, and replaces it when the scan finishes. A browser with no saved data shows the page layout right away but waits for the first scan, which can take tens of seconds on a large history.
+
+The header shows a 3D skyline of the selected range, with one tower per day sized by spend. Hover a tower to see that day's spend, tokens, and requests, or drag to turn the skyline. The top bar shows the total number of indexed events, which rolls forward when a refresh finds new ones.
+
+The daily chart follows the selected range. Ranges longer than 45 days show a 7-day average, with each day's total as a fainter line. The activity rhythm groups usage by weekday and hour in the time zone of the machine running token-calc.
 
 ## Terminal UI
 
