@@ -115,6 +115,15 @@ export interface HeatmapCell {
 	costUSD: number;
 }
 
+/** Usage by local time: weekday 0 is Sunday, hour runs 0 to 23. */
+export interface WeekdayHourAggregation {
+	weekday: number;
+	hour: number;
+	totalTokens: number;
+	costUSD: number;
+	eventCount: number;
+}
+
 export interface DashboardData {
 	generated: string;
 	totals: {
@@ -137,6 +146,7 @@ export interface DashboardData {
 	byProject: ProjectAggregation[];
 	byOpenDot: OpenDotAggregation[];
 	heatmap: HeatmapCell[];
+	byWeekdayHour: WeekdayHourAggregation[];
 }
 
 export function emptyTokens(): TokenCounts {

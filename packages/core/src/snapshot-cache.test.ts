@@ -61,6 +61,20 @@ it('awaits an expired refresh and shares it instead of reporting stale data as r
   expect(loadAll).toHaveBeenCalledTimes(2)
 })
 
+it('reuses a recent scan when other ranges are requested one after another', async () => {
+  const { loadDashboardSnapshot } = await import('./index.js')
+  await loadDashboardSnapshot('7')
+  vi.mocked(Date.now).mockReturnValue(Date.now() + 9_000)
+  expect((await loadDashboardSnapshot('all')).totals.eventCount).toBe(2)
+  expect(loadAll).toHaveBeenCalledTimes(1)
+
+  vi.mocked(Date.now).mockReturnValue(Date.now() + 1_001)
+  loadAll.mockResolvedValue(result(['10', '11', '12'].map((hour) => event(`2026-10-26T${hour}:00:00Z`))))
+  expect((await loadDashboardSnapshot('all')).totals.eventCount).toBe(3)
+  expect((await loadDashboardSnapshot('7')).totals.eventCount).toBe(3)
+  expect(loadAll).toHaveBeenCalledTimes(2)
+})
+
 it('retries a failed ingestion rather than caching a rejected promise', async () => {
   const { loadDashboardSnapshot } = await import('./index.js')
   loadAll.mockRejectedValueOnce(new Error('scan failed'))

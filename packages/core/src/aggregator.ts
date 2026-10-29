@@ -11,6 +11,7 @@ import type {
 	ProjectAggregation,
 	OpenDotAggregation,
 	HeatmapCell,
+	WeekdayHourAggregation,
 	DashboardData,
 	Source,
 } from './types.js';
@@ -26,11 +27,14 @@ const SOURCE_ORDER: Source[] = [
 ];
 
 function dateKey(timestamp: string): string {
+	if (timestamp[4] === '-' && timestamp[7] === '-' && timestamp[10] === 'T' && timestamp.endsWith('Z')) {
+		return timestamp.slice(0, 10);
+	}
 	return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function monthKey(timestamp: string): string {
-	return new Date(timestamp).toISOString().slice(0, 7);
+	return dateKey(timestamp).slice(0, 7);
 }
 
 function unique<T>(arr: T[]): T[] {
@@ -353,6 +357,27 @@ export function aggregateHeatmap(events: UnifiedTokenEvent[]): HeatmapCell[] {
 	return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export function aggregateByWeekdayHour(events: UnifiedTokenEvent[]): WeekdayHourAggregation[] {
+	const cells = new Map<number, WeekdayHourAggregation>();
+
+	for (const e of events) {
+		const date = new Date(e.timestamp);
+		const weekday = date.getDay();
+		const hour = date.getHours();
+		const key = weekday * 24 + hour;
+		let cell = cells.get(key);
+		if (!cell) {
+			cell = { weekday, hour, totalTokens: 0, costUSD: 0, eventCount: 0 };
+			cells.set(key, cell);
+		}
+		cell.totalTokens += totalTokenCount(e.tokens);
+		cell.costUSD += e.costUSD;
+		cell.eventCount++;
+	}
+
+	return [...cells.entries()].sort(([a], [b]) => a - b).map(([, cell]) => cell);
+}
+
 export function aggregateByOpenDot(events: UnifiedTokenEvent[]): OpenDotAggregation[] {
 	const map = new Map<string, OpenDotAggregation>();
 	for (const event of events) {
@@ -416,5 +441,6 @@ export function buildDashboardData(events: UnifiedTokenEvent[]): DashboardData {
 		byProject,
 		byOpenDot: aggregateByOpenDot(events),
 		heatmap,
+		byWeekdayHour: aggregateByWeekdayHour(events),
 	};
 }
