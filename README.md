@@ -55,7 +55,7 @@ Open `http://127.0.0.1:6767`.
 
 The dashboard includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time. It loads the selected range first, then calculates the other ranges in the background, so switching ranges doesn't wait for a scan. The selected range refreshes every minute; another range refreshes when you open it, if its data is more than a minute old.
 
-The browser keeps the last snapshot of each range in IndexedDB. On later visits the page shows that saved data immediately, marked as saved in the header, and replaces it when the scan finishes. A browser with no saved data shows the page layout right away but waits for the first scan, which can take tens of seconds on a large history.
+The browser keeps the last snapshot of each range in IndexedDB. On later visits the page shows that saved data immediately, marked as saved in the header, and replaces it when the scan finishes. A browser with no saved data shows the page layout right away but waits for the first scan, which can take tens of seconds on a large history. The dev server starts that scan as soon as it starts listening, so a page opened a few minutes later loads from the warm caches.
 
 The header shows a 3D skyline of the selected range, with one tower per day sized by spend. Hover a tower to see that day's spend, tokens, and requests, or drag to turn the skyline. The top bar shows the total number of indexed events, which rolls forward when a refresh finds new ones.
 
