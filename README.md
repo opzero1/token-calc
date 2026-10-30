@@ -30,7 +30,7 @@ The default home is `~/.opendot`. Set `OPEN_DOT_HOME` if your dots live elsewher
 
 ## Ingestion performance
 
-The first scan still reads historical data. Later scans in the same process reuse unchanged Codex files and OpenCode sessions. OpenCode refreshes changed sessions from session revision counters and performs a full reconciliation every five minutes to catch edits that bypass those counters. Source databases remain read-only.
+The first scan still reads historical data. Later scans in the same process reuse unchanged Codex files and OpenCode sessions. OpenCode rereads only sessions whose usage totals, update time, or assistant message count changed, and reads the whole database again only when the file is replaced or a thousand or more sessions change between scans. Source databases remain read-only.
 
 Snapshot requests made within ten seconds of a scan reuse it, including requests for other ranges. Dashboard snapshots expire ten seconds after the scan they came from; expired requests wait for fresh data. Only events in the selected period need cost enrichment. A new CLI process starts with cold caches.
 

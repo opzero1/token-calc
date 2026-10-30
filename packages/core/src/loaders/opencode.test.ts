@@ -63,7 +63,7 @@ describe('loadOpenCodeEvents', () => {
     expect(dashboard.byOpenDot.reduce((sum, dot) => sum + dot.costUSD, 0)).toBe(4)
   })
 
-  it('reuses unchanged sessions and reloads only changed sessions, with periodic full reconciliation', async () => {
+  it('reloads only sessions whose revision or message count changed, without periodic full rescans', async () => {
     dataDir = await mkdtemp(path.join(tmpdir(), 'token-calc-opencode-'))
     process.env.OPENCODE_DATA_DIR = dataDir
     const db = new DatabaseSync(path.join(dataDir, 'opencode.db'))
@@ -71,23 +71,35 @@ describe('loadOpenCodeEvents', () => {
       CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)`)
     const message = (input: number) => JSON.stringify({ model: { providerID: 'openai', id: 'model' },
       tokens: { input, output: 0, cache: { read: 0, write: 0 } } })
+    const insert = db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?)')
     db.prepare('INSERT INTO session_v2 VALUES (?, ?, ?)').run('s', 1, 0)
-    db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?)').run('m', 's', 'assistant', 1_700_000_000_000, message(10))
+    insert.run('m', 's', 'assistant', 1_700_000_000_000, message(10))
     expect((await loadOpenCodeEvents())[0].tokens.input).toBe(10)
     const queries = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    const usageQueries = () => {
+      const sql = queries.mock.calls.map(([statement]) => statement).filter((statement) => statement.includes('FROM session_message') && statement.includes('json_extract'))
+      queries.mockClear()
+      return sql
+    }
+
     db.prepare('UPDATE session_message SET data = ? WHERE id = ?').run(message(20), 'm')
     db.prepare('UPDATE session_v2 SET cost = ? WHERE id = ?').run(1, 's')
     expect((await loadOpenCodeEvents())[0].tokens.input).toBe(20)
-    expect(queries.mock.calls.filter(([sql]) => sql.includes('FROM session_message')).map(([sql]) => sql)).toEqual([
-      expect.stringContaining('AND session_id = ?'),
-    ])
-    // Out-of-band edits without OpenCode's session revisions are caught by reconciliation.
-    db.prepare('UPDATE session_message SET data = ? WHERE id = ?').run(message(30), 'm')
-    const now = Date.now()
-    vi.spyOn(Date, 'now').mockReturnValue(now + 5 * 60_000 + 1)
-    expect((await loadOpenCodeEvents())[0].tokens.input).toBe(30)
+    expect(usageQueries()).toEqual([expect.stringContaining('AND session_id = ?')])
+
+    insert.run('n', 's', 'assistant', 1_700_000_001_000, message(5))
+    expect((await loadOpenCodeEvents()).map((event) => event.tokens.input)).toEqual([20, 5])
+    expect(usageQueries()).toEqual([expect.stringContaining('AND session_id = ?')])
+
+    db.prepare('DELETE FROM session_message WHERE id = ?').run('m')
+    expect((await loadOpenCodeEvents()).map((event) => event.tokens.input)).toEqual([5])
+    expect(usageQueries()).toEqual([expect.stringContaining('AND session_id = ?')])
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60 * 60_000)
+    insert.run('u', 's', 'user', 1_700_000_002_000, '{}')
+    expect((await loadOpenCodeEvents()).map((event) => event.tokens.input)).toEqual([5])
+    expect(usageQueries()).toEqual([])
     db.close()
-    vi.restoreAllMocks()
   })
 
   it('refreshes updated, deleted and backfilled messages and isolates cached events', async () => {

@@ -9,9 +9,8 @@ import { openDotSessions, type OpenCodeSession } from './open-dot.js';
 const DEFAULT_OPEN_CODE_PATH = path.join(homedir(), '.local', 'share', 'opencode');
 
 type TableCache = { revisions: Map<string, string>; records: Map<string, OpenCodeRecord> };
-type DatabaseCache = { identity: string; fingerprint: string; loadedAt: number; tables: Map<string, TableCache>; sessions: OpenCodeSession[] };
+type DatabaseCache = { identity: string; fingerprint: string; tables: Map<string, TableCache>; sessions: OpenCodeSession[] };
 const databaseCache = new Map<string, DatabaseCache>();
-const FULL_RESCAN_MS = 5 * 60_000;
 
 type OpenCodeRecord = {
 	id: string;
@@ -22,6 +21,7 @@ type OpenCodeRecord = {
 const USAGE_QUERIES = [
 	{
 		format: 'legacy',
+		messageCounts: 'SELECT session_id, count(*) AS messages FROM message GROUP BY session_id',
 		sql: `SELECT id,
 		             session_id,
 		             time_created,
@@ -41,6 +41,7 @@ const USAGE_QUERIES = [
 	},
 	{
 		format: 'v2',
+		messageCounts: `SELECT session_id, count(*) AS messages FROM session_message WHERE type = 'assistant' GROUP BY session_id`,
 		sql: `SELECT id,
 		             session_id,
 		             time_created,
@@ -62,7 +63,7 @@ const USAGE_QUERIES = [
 		              ELSE 0
 		            END`,
 	},
-] satisfies ReadonlyArray<{ format: OpenCodeRecord['format']; sql: string }>;
+] satisfies ReadonlyArray<{ format: OpenCodeRecord['format']; messageCounts: string; sql: string }>;
 
 function getOpenCodePath(): string | null {
 	const envPath = (process.env.OPENCODE_DATA_DIR ?? '').trim();
@@ -132,8 +133,7 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 			}
 		}))).join('|');
 		const previous = databaseCache.get(dbPath);
-		const now = Date.now();
-		const fresh = previous?.identity === identity && now >= previous.loadedAt && now - previous.loadedAt < FULL_RESCAN_MS;
+		const fresh = previous?.identity === identity;
 		const attribute = (cached: DatabaseCache) => {
 			const dots = openDotSessions(cached.sessions);
 			return [...cached.tables.values()].flatMap((table) => [...table.records.values()].map((record) => ({
@@ -155,9 +155,12 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 					const incremental = sessionColumns.includes('time_updated');
 					const revisions = new Map<string, string>();
 					if (incremental) {
+						// OpenCode keeps session totals in step with message usage; message counts also catch rows added or removed without them.
+						const messageCounts = new Map<string, number>();
+						for (const row of db.prepare(query.messageCounts).iterate()) messageCounts.set(String(row.session_id), Number(row.messages));
 						const columns = ['id', 'time_updated', 'cost', 'tokens_input', 'tokens_output', 'tokens_reasoning', 'tokens_cache_read', 'tokens_cache_write'].filter((column) => sessionColumns.includes(column));
 						for (const row of db.prepare(`SELECT ${columns.join(', ')} FROM ${sessionTable}`).iterate()) {
-							revisions.set(String(row.id), JSON.stringify(row));
+							revisions.set(String(row.id), JSON.stringify({ ...row, messages: messageCounts.get(String(row.id)) ?? 0 }));
 						}
 					}
 					const cached = fresh && incremental ? previous.tables.get(query.format) : undefined;
@@ -189,11 +192,13 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 						if (event) records.set(id, { id, format: query.format, event });
 					};
 					if (changed && changed.length < 1_000) {
-						const statement = db.prepare(`${query.sql} AND session_id = ?`);
 						const changedIDs = new Set(changed);
 						for (const [id, record] of records) if (changedIDs.has(record.event.sessionId)) records.delete(id);
-						for (const id of changed) {
-							for (const row of statement.iterate(id)) parse(row);
+						if (changed.length > 0) {
+							const statement = db.prepare(`${query.sql} AND session_id = ?`);
+							for (const id of changed) {
+								for (const row of statement.iterate(id)) parse(row);
+							}
 						}
 					} else {
 						records.clear();
@@ -216,7 +221,7 @@ async function loadOpenCodeEventsFromDb(dbPath: string): Promise<OpenCodeRecord[
 			}
 			db.exec('COMMIT');
 			if (!readable) return null;
-			const cached: DatabaseCache = { identity, fingerprint, loadedAt: fresh ? previous.loadedAt : now, tables, sessions };
+			const cached: DatabaseCache = { identity, fingerprint, tables, sessions };
 			databaseCache.set(dbPath, cached);
 			return attribute(cached);
 		} finally {
