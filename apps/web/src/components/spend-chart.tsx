@@ -240,6 +240,7 @@ export function SpendChart({ snapshot }: { snapshot: WebSnapshot }) {
                 {peak && peak.total > 0 && hoverIndex === null ? (
                   <g>
                     <circle cx={x(peakIndex)} cy={y(peak.total)} r={9} fill="var(--main)" fillOpacity={0.14} />
+                    <circle className="peak-halo" cx={x(peakIndex)} cy={y(peak.total)} r={9} fill="var(--main)" fillOpacity={0.3} />
                     <circle cx={x(peakIndex)} cy={y(peak.total)} r={3.5} fill="var(--main)" />
                   </g>
                 ) : null}

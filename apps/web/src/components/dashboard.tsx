@@ -29,10 +29,9 @@ import {
 import type { WebSnapshot } from '@/lib/snapshot'
 import { cn } from '@/lib/utils'
 
-export type RangeState = { loading: boolean; live: boolean; hasData: boolean }
+export type RangeState = { loading: boolean; live: boolean }
 
-function AnimatedTokenCount({ value }: { value: number }) {
-  const initialValue = Math.max(0, value - Math.min(Math.max(value * 0.004, 1_000_000), 100_000_000))
+function useTweenedNumber(value: number, duration: number, initialValue = value) {
   const [displayValue, setDisplayValue] = React.useState(initialValue)
   const displayValueRef = React.useRef(initialValue)
 
@@ -45,13 +44,12 @@ function AnimatedTokenCount({ value }: { value: number }) {
     }
 
     const startedAt = performance.now()
-    const duration = 1_200
     let frameId = 0
 
     function animate(now: number) {
       const progress = Math.min(1, (now - startedAt) / duration)
       const eased = 1 - Math.pow(1 - progress, 3)
-      const nextValue = Math.round(from + (value - from) * eased)
+      const nextValue = from + (value - from) * eased
       displayValueRef.current = nextValue
       setDisplayValue(nextValue)
       if (progress < 1) frameId = window.requestAnimationFrame(animate)
@@ -59,7 +57,19 @@ function AnimatedTokenCount({ value }: { value: number }) {
 
     frameId = window.requestAnimationFrame(animate)
     return () => window.cancelAnimationFrame(frameId)
-  }, [value])
+  }, [duration, value])
+
+  return displayValue
+}
+
+function AnimatedNumber({ value, format }: { value: number; format: (value: number) => string }) {
+  return <>{format(useTweenedNumber(value, 700))}</>
+}
+
+function AnimatedTokenCount({ value }: { value: number }) {
+  const displayValue = Math.round(
+    useTweenedNumber(value, 1_200, Math.max(0, value - Math.min(Math.max(value * 0.004, 1_000_000), 100_000_000))),
+  )
 
   return (
     <div aria-live="polite">
@@ -71,6 +81,10 @@ function AnimatedTokenCount({ value }: { value: number }) {
       </div>
     </div>
   )
+}
+
+function formatCount(value: number) {
+  return formatNumber(Math.round(value))
 }
 
 function shortModel(model: string) {
@@ -188,20 +202,6 @@ function SyncStatus({
   )
 }
 
-function RangeDot({ state, active }: { state: RangeState; active: boolean }) {
-  if (!state.loading && !state.hasData) return null
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'size-1.5 rounded-full',
-        active ? 'bg-main-foreground' : 'bg-main',
-        state.loading && 'animate-pulse',
-        !state.loading && !state.live && 'opacity-40',
-      )}
-    />
-  )
-}
 
 function Placeholder({ className }: { className?: string }) {
   return <div className={cn('skeleton rounded-lg', className)} />
@@ -250,7 +250,7 @@ export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRa
         </header>
 
         <main className="dashboard-content dashboard-stack mx-auto flex w-full max-w-[1500px] flex-col">
-          <section className="hero-panel">
+          <section className="hero-panel rise-in">
             <div className="hero-grid" aria-hidden />
             <div className="hero-glow" aria-hidden />
             <div className="hero-content relative grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -272,10 +272,8 @@ export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRa
                       key={item.value}
                       active={range === item.value}
                       onClick={() => onRangeChange(item.value)}
-                      className="inline-flex items-center justify-center gap-1.5"
                     >
                       {item.label}
-                      <RangeDot state={rangeState(item.value)} active={range === item.value} />
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -286,13 +284,19 @@ export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRa
                     </div>
                     {snapshot ? (
                       <div className="mt-3 font-heading text-[clamp(2rem,3.4vw,3.25rem)] font-medium leading-none tracking-[-0.06em]">
-                        {formatUsd(snapshot.totals.costUSD)}
+                        <AnimatedNumber value={snapshot.totals.costUSD} format={formatUsd} />
                       </div>
                     ) : (
                       <Placeholder className="mt-3 h-[clamp(2rem,3.4vw,3.25rem)] w-44" />
                     )}
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      {snapshot ? `${formatUsd(averageCost)} per active day` : 'Calculating'}
+                      {snapshot ? (
+                        <>
+                          <AnimatedNumber value={averageCost} format={formatUsd} /> per active day
+                        </>
+                      ) : (
+                        'Calculating'
+                      )}
                     </div>
                   </div>
                   <div data-glass-target>
@@ -316,10 +320,38 @@ export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRa
           </section>
 
           <section className="content-grid grid sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={<CalendarDays />} label="Active days" value={snapshot ? formatNumber(snapshot.totals.activeDays) : null} detail="Days with recorded usage" />
-            <MetricCard icon={<Gauge />} label="Daily burn" value={snapshot ? formatUsd(averageCost) : null} detail="Average per active day" />
-            <MetricCard icon={<Activity />} label="Requests" value={snapshot ? formatNumber(snapshot.totals.eventCount) : null} detail="Model events in this window" />
-            <MetricCard icon={<Coins />} label="Tracked tools" value={snapshot ? formatNumber(snapshot.detected.length) : null} detail="Local sources reporting" />
+            <MetricCard
+              icon={<CalendarDays />}
+              label="Active days"
+              value={snapshot?.totals.activeDays ?? null}
+              format={formatCount}
+              detail="Days with recorded usage"
+              order={1}
+            />
+            <MetricCard
+              icon={<Gauge />}
+              label="Daily burn"
+              value={snapshot ? averageCost : null}
+              format={formatUsd}
+              detail="Average per active day"
+              order={2}
+            />
+            <MetricCard
+              icon={<Activity />}
+              label="Requests"
+              value={snapshot?.totals.eventCount ?? null}
+              format={formatCount}
+              detail="Model events in this window"
+              order={3}
+            />
+            <MetricCard
+              icon={<Coins />}
+              label="Tracked tools"
+              value={snapshot?.detected.length ?? null}
+              format={formatCount}
+              detail="Local sources reporting"
+              order={4}
+            />
           </section>
 
           {!snapshot ? (
@@ -334,19 +366,18 @@ export function Dashboard({ snapshot, range, rangeState, error, eventCount, onRa
             <EmptyState errors={snapshot.errors} />
           ) : (
             <>
-              <SpendChart snapshot={snapshot} />
-              <section className="content-grid grid lg:grid-cols-[1.3fr_0.7fr]">
+              <div className="rise-in min-w-0">
+                <SpendChart snapshot={snapshot} />
+              </div>
+              <section className="content-grid rise-in grid lg:grid-cols-[1.3fr_0.7fr]" style={{ animationDelay: '90ms' }}>
                 <ActivityRhythm snapshot={snapshot} />
                 <TopModels snapshot={snapshot} />
               </section>
-              <DailyTable snapshot={snapshot} />
+              <div className="rise-in min-w-0" style={{ animationDelay: '180ms' }}>
+                <DailyTable snapshot={snapshot} />
+              </div>
             </>
           )}
-
-          <footer className="flex flex-col gap-2 border-t border-border px-1 pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span>All analysis stays on this machine.</span>
-            <span>{snapshot ? `Last indexed at ${formatClock(snapshot.generated)}` : 'Indexing…'}</span>
-          </footer>
         </main>
       </div>
     </Glass>
@@ -367,15 +398,23 @@ function MetricCard({
   icon,
   label,
   value,
+  format,
   detail,
+  order,
 }: {
   icon: React.ReactNode
   label: string
-  value: string | null
+  value: number | null
+  format: (value: number) => string
   detail: string
+  order: number
 }) {
   return (
-    <Card className="metric-card group overflow-hidden p-[var(--card-padding)]" data-glass-target>
+    <Card
+      className="metric-card rise-in group overflow-hidden p-[var(--card-padding)]"
+      style={{ animationDelay: `${order * 70}ms` }}
+      data-glass-target
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-white/[0.025] text-muted-foreground transition-colors group-hover:border-main/30 group-hover:text-main">
           {icon}
@@ -385,7 +424,9 @@ function MetricCard({
       {value === null ? (
         <Placeholder className="mt-8 h-[1.875rem] w-28" />
       ) : (
-        <div className="mt-8 break-words font-heading text-3xl font-medium leading-none tracking-[-0.05em]">{value}</div>
+        <div className="mt-8 break-words font-heading text-3xl font-medium leading-none tracking-[-0.05em]">
+          <AnimatedNumber value={value} format={format} />
+        </div>
       )}
       <div className="mt-2 text-xs text-muted-foreground">{detail}</div>
     </Card>
@@ -425,12 +466,12 @@ const TOKEN_PARTS = [
   { key: 'reasoning', label: 'Reasoning', color: '#f472b6' },
 ] as const
 
-function TokenMixBar({ tokens, width }: { tokens: WebSnapshot['totals']['tokens']; width: number }) {
+function TokenMixBar({ tokens, width, delay }: { tokens: WebSnapshot['totals']['tokens']; width: number; delay: number }) {
   const total = totalTokens(tokens)
   return (
     <div
-      className="flex h-full overflow-hidden rounded-full transition-[width] duration-500 ease-out"
-      style={{ width: `${width}%` }}
+      className="bar-grow flex h-full overflow-hidden rounded-full transition-[width] duration-500 ease-out"
+      style={{ width: `${width}%`, animationDelay: `${delay}ms` }}
     >
       {TOKEN_PARTS.map((part) =>
         tokens[part.key] > 0 ? (
@@ -489,7 +530,7 @@ function TopModels({ snapshot }: { snapshot: WebSnapshot }) {
                   {metric === 'cost' ? formatUsd(model.costUSD) : formatCompactTokens(tokenTotal)}
                 </span>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                  <TokenMixBar tokens={model.tokens} width={Math.max(2, (valueOf(model) / maxValue) * 100)} />
+                  <TokenMixBar tokens={model.tokens} width={Math.max(2, (valueOf(model) / maxValue) * 100)} delay={200 + index * 60} />
                 </div>
                 <span className="text-right text-[11px] tabular-nums text-muted-foreground">
                   {metric === 'cost' ? `${formatCompactTokens(tokenTotal)} tok` : formatUsd(model.costUSD, true)} ·{' '}
@@ -643,7 +684,7 @@ function DailyTable({ snapshot }: { snapshot: WebSnapshot }) {
                   <span className="flex items-center justify-end gap-3">
                     <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-white/[0.06] lg:block">
                       <span
-                        className="block h-full rounded-full bg-main"
+                        className="bar-grow block h-full rounded-full bg-main"
                         style={{ width: `${Math.max(3, (day.costUSD / maxCost) * 100)}%` }}
                       />
                     </span>
@@ -686,7 +727,7 @@ function DailyTable({ snapshot }: { snapshot: WebSnapshot }) {
 
 function DayBreakdown({ details, dayCost }: { details: WebSnapshot['dailyBySourceModel']; dayCost: number }) {
   return (
-    <div className="grid gap-0.5 border-t border-border px-3 pb-3 pt-2">
+    <div className="rise-in grid gap-0.5 border-t border-border px-3 pb-3 pt-2" style={{ animationDuration: '350ms' }}>
       {details.map((detail) => (
         <div
           key={`${detail.source}:${detail.model}`}

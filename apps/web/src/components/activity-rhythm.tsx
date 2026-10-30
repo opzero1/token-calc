@@ -109,10 +109,13 @@ export function ActivityRhythm({ snapshot }: { snapshot: WebSnapshot }) {
               <div key={hour} className="flex h-12 items-end">
                 <div
                   className={cn(
-                    'w-full rounded-t-[3px] transition-[height,background-color] duration-300',
+                    'bar-rise w-full rounded-t-[3px] transition-[height,background-color] duration-300',
                     focus?.hour === hour ? 'bg-main' : 'bg-main/35',
                   )}
-                  style={{ height: `${Math.max(hourTotals[hour] > 0 ? 6 : 2, (hourTotals[hour] / maxHour) * 100)}%` }}
+                  style={{
+                    height: `${Math.max(hourTotals[hour] > 0 ? 6 : 2, (hourTotals[hour] / maxHour) * 100)}%`,
+                    animationDelay: `${150 + hour * 18}ms`,
+                  }}
                   title={`${formatHour(hour)}: ${format(hourTotals[hour])}`}
                 />
               </div>
@@ -147,8 +150,9 @@ export function ActivityRhythm({ snapshot }: { snapshot: WebSnapshot }) {
                       onFocus={() => setHovered({ row: rowIndex, hour })}
                     >
                       <span
-                        className="block rounded-full transition-[width,height,opacity] duration-300"
+                        className="bubble-in block rounded-full transition-[width,height,opacity] duration-300"
                         style={{
+                          animationDelay: `${200 + (rowIndex + hour) * 14}ms`,
                           width: cell.value > 0 ? `${22 + intensity * 70}%` : '14%',
                           height: cell.value > 0 ? `${22 + intensity * 70}%` : '14%',
                           backgroundColor: cell.value > 0 ? 'var(--main)' : 'rgba(255,255,255,0.12)',
@@ -163,10 +167,10 @@ export function ActivityRhythm({ snapshot }: { snapshot: WebSnapshot }) {
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
                     <div
                       className={cn(
-                        'h-full rounded-full transition-[width] duration-300',
+                        'bar-grow h-full rounded-full transition-[width] duration-300',
                         focus?.row === rowIndex ? 'bg-main' : 'bg-main/45',
                       )}
-                      style={{ width: `${(dayTotals[rowIndex] / maxDay) * 100}%` }}
+                      style={{ width: `${(dayTotals[rowIndex] / maxDay) * 100}%`, animationDelay: `${300 + rowIndex * 60}ms` }}
                     />
                   </div>
                 </div>

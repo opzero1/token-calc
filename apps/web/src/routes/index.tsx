@@ -103,9 +103,8 @@ function useDashboardSnapshots(range: TimeRange) {
     (target: TimeRange): RangeState => ({
       loading: loading.has(target),
       live: fetchedAt.current.has(target),
-      hasData: snapshots[target] !== undefined,
     }),
-    [loading, snapshots],
+    [loading],
   )
 
   return { snapshots, stateOf, error, refresh: load }

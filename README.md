@@ -53,7 +53,7 @@ pnpm dev
 
 Open `http://127.0.0.1:6767`.
 
-The dashboard includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time. It loads the selected range first, then calculates the other ranges in the background, so switching ranges doesn't wait for a scan. A dot on each range shows whether its data is loading or ready. The selected range refreshes every minute; another range refreshes when you open it, if its data is more than a minute old.
+The dashboard includes range filters for 7 days, 30 days, 90 days, 180 days, 1 year, and all time. It loads the selected range first, then calculates the other ranges in the background, so switching ranges doesn't wait for a scan. The selected range refreshes every minute; another range refreshes when you open it, if its data is more than a minute old.
 
 The browser keeps the last snapshot of each range in IndexedDB. On later visits the page shows that saved data immediately, marked as saved in the header, and replaces it when the scan finishes. A browser with no saved data shows the page layout right away but waits for the first scan, which can take tens of seconds on a large history.
 

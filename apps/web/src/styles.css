@@ -171,6 +171,69 @@ button {
   animation: chart-reveal 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Entrance animations fill backwards only, so hover transforms still apply once they finish. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.rise-in {
+  animation: rise-in 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.bar-rise {
+  transform-origin: center bottom;
+  animation: bar-rise 800ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+
+.bubble-in {
+  animation: bubble-in 650ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+@keyframes halo {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+.peak-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: halo 2.8s ease-out infinite;
+}
+
 .hero-panel {
   position: relative;
   overflow: hidden;
@@ -318,6 +381,7 @@ button {
   *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
